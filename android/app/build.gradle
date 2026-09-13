@@ -56,3 +56,14 @@ android {
 flutter {
     source = "../.."
 }
+
+// 修复 workmanager 等插件带入的 Guava/ListenableFuture 重复类冲突
+configurations.all {
+    resolutionStrategy {
+        force 'com.google.guava:guava:32.1.1-android'
+    }
+}
+
+dependencies {
+    implementation "com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava"
+}

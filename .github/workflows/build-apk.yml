@@ -61,9 +61,12 @@ jobs:
         run: |
           echo "===== last 40 lines ====="
           tail -n 40 /tmp/apk_build.log || true
-          echo "===== error lines ====="
-          grep -E "(FAILURE: Build failed|What went wrong|Execution failed for task|error:|Caused by:)" /tmp/apk_build.log \
-            | tail -n 8 | cut -c1-400 > /tmp/errs.txt || true
+          echo "===== what went wrong ====="
+          awk '/What went wrong/{f=1;next} f&&n<25{print;n++}' /tmp/apk_build.log || true
+          {
+            grep -E "Duplicate class" /tmp/apk_build.log | head -n 6 | cut -c1-380
+            grep -E "Execution failed for task|Caused by:" /tmp/apk_build.log | tail -n 4 | cut -c1-380
+          } | awk '!seen[$0]++' > /tmp/errs.txt || true
           cat /tmp/errs.txt
           while IFS= read -r line; do echo "::error::$line"; done < /tmp/errs.txt
 
