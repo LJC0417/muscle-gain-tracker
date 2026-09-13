@@ -57,9 +57,14 @@ flutter {
     source = "../.."
 }
 
-// 修复 workmanager 等插件带入的 Guava/ListenableFuture 重复类冲突
+// 修复依赖重复类冲突：
+// 1) kotlin-stdlib 1.8+ 已并入 jdk7/jdk8 子库，老插件带入的 1.7.x 子库会与之重复 → 统一锁 1.8.22
+// 2) workmanager 等插件带入的 Guava/ListenableFuture 重复
 configurations.all {
     resolutionStrategy {
+        force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
         force 'com.google.guava:guava:32.1.1-android'
     }
 }
