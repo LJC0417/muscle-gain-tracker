@@ -1,0 +1,35 @@
+# Flutter / Dart
+build/
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+coverage/
+
+# Drift / build_runner 生成代码（CI 现场生成，不入库）
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# macOS
+.DS_Store
+
+# Android / iOS 平台目录（CI 用 flutter create 现场生成，不入库）
+android/
+ios/
+linux/
+macos/
+windows/
+web/
+
+# 临时文件
+*.log
+*.tmp
+__*.txt

@@ -1,0 +1,49 @@
+name: muscle_gain_tracker
+description: "增肌管理 - 记录体重、饮食，生成训练计划与AI周报的Flutter安卓应用"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+  drift: ^2.18.0
+  drift_flutter: ^0.1.0
+  go_router: ^14.1.4
+  fl_chart: ^0.68.0
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.9.0
+  path_provider: ^2.1.3
+  path: ^1.9.0
+  share_plus: ^9.0.0
+  file_picker: ^8.0.5
+  csv: ^6.0.0
+  flutter_local_notifications: ^17.2.1
+  timezone: ^0.9.3
+  workmanager: ^0.5.2
+  intl: ^0.19.0
+  collection: ^1.18.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.11
+  freezed: ^2.5.3
+  json_serializable: ^6.8.0
+  drift_dev: ^2.18.0
+  custom_lint: ^0.6.4
+  riverpod_lint: ^2.3.12
+  riverpod_generator: ^2.4.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/data/foods.json
+    - assets/data/exercises.json
+    - assets/images/
