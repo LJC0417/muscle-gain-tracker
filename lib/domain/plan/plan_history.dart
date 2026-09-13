@@ -118,8 +118,8 @@ Rolling7Stats rolling7TrainingStats(
       .where((s) => s.status == 'completed' && s.date.compareTo(from) >= 0 && s.date.compareTo(to) <= 0)
       .toList();
   final count = done.length;
-  var total = num.zero;
-  var durSum = num.zero;
+  var total = 0.0;
+  var durSum = 0.0;
   for (final s in done) {
     total += s.totalVolumeKg ?? 0;
     durSum += s.durationSec ?? 0;

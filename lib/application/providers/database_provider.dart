@@ -12,7 +12,7 @@ import '../../data/seed_loader.dart';
 
 /// AppDatabase 单例。
 final databaseProvider = Provider<AppDatabase>((ref) {
-  final db = driftDatabase(name: 'mg');
+  final db = AppDatabase(driftDatabase(name: 'mg'));
   ref.onDispose(db.close);
   return db;
 });

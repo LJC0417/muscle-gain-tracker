@@ -21,8 +21,7 @@ coverage/
 # macOS
 .DS_Store
 
-# Android / iOS 平台目录（CI 用 flutter create 现场生成，不入库）
-android/
+# iOS / 桌面 / Web 平台目录不入库（android/ 已提交，CI 直接使用）
 ios/
 linux/
 macos/

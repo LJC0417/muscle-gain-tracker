@@ -109,7 +109,8 @@ void main() {
     test('scene 不匹配过滤掉', () {
       final pool = _homeDumbbellBench();
       final all = availableExercises('gym', ['dumbbell', 'bench'], pool);
-      expect(all.length, pool.length); // 全部支持 home+gym
+      // 全部支持 home+gym；但 band_pull_apart 需要 band，被器械过滤 → 12 个
+      expect(all.length, pool.length - 1);
     });
 
     test('requiredEquipment=none（自重）即使无器械也通过', () {
@@ -172,7 +173,10 @@ void main() {
       final c = plan.days.firstWhere((d) => d.code == 'C');
       // legs slot 要求 2，但 pool 中只 1 个；fallbackMap: 'legs' 没有 → 不会借到，但同 mg 不限 sub 也不够
       // 因此只取 1 个
-      final legs = c.entries.where((e) => e.muscleGroup == 'legs').toList();
+      final legs = c.entries
+          .where((e) =>
+              pool.firstWhere((x) => x.id == e.exerciseId).muscleGroup == 'legs')
+          .toList();
       expect(legs.length, 1);
     });
 

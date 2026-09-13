@@ -122,13 +122,11 @@ ResolvedGoal resolveGoal(
   final manualMacros = isManualField(goal, 'protein') &&
       isManualField(goal, 'carb') &&
       isManualField(goal, 'fat');
-  final manualKcalPlusPF = isManualField(goal, 'kcal') &&
-      isManualField(goal, 'protein') &&
-      isManualField(goal, 'fat');
 
   if (manualMacros) {
     kcal = protein * 4 + carb * 4 + fat * 9;
-  } else if (manualKcalPlusPF && !isManualField(goal, 'carb')) {
+  } else if (isManualField(goal, 'kcal') && !isManualField(goal, 'carb')) {
+    // 热量手动锁定（无论蛋白/脂肪是否手动）：碳水吸收差额
     final derived = R.r5((kcal - protein * 4 - fat * 9) / 4);
     if (derived >= 0) carb = derived;
   } else if (isManualField(goal, 'kcal') &&
@@ -175,11 +173,14 @@ WeightLinkResult onWeightLogged(
       ? goal['lastWeightUsed'] as num
       : newKg;
   if ((newKg - prevW).abs() < AppConfig.weightLinkThreshold) {
+    // 不联动，但仍记录本次体重，作为下次联动的 prev 基准
+    final next = Map<String, dynamic>.from(goal);
+    next['lastWeightUsed'] = newKg;
     return WeightLinkResult(
       changed: false,
       fields: const [],
       message: '',
-      nextGoal: goal,
+      nextGoal: next,
     );
   }
   final prevAuto = computeAutoGoal(profile, prevW, goal);

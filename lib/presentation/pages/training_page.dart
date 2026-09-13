@@ -9,6 +9,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:drift/drift.dart' hide Column, Table;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers/app_providers.dart';

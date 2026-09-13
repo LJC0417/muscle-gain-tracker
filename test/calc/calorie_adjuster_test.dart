@@ -201,14 +201,11 @@ void main() {
       expect(next['kcalAutoOffset'], 100);
     });
 
-    test('goal=null / suggest=null → 返回原值', () {
+    test('suggest=null → 返回原 goal', () {
       final goal = {'kcalAutoOffset': 0};
       expect(applyAdjustment(null, goal, '2025-W11'), goal);
-      expect(applyAdjustment(
-        CalorieAdjust(type: 'maintain', amount: 0, newKcal: 2870, reason: '', severity: 0),
-        null as Map<String, dynamic>?,
-        '2025-W11',
-      ), isNull);
+      expect(applyAdjustment(null, <String, dynamic>{}, '2025-W11'),
+          <String, dynamic>{});
     });
   });
 }

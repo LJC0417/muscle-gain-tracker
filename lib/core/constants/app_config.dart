@@ -102,7 +102,7 @@ class AppConfig {
   ];
   static const List<String> chartRange = ['week', 'month', 'quarter', 'all'];
   static const List<String> sessionStatus = ['ongoing', 'completed', 'abandoned'];
-  static const List<String> weightUnit = ['kg', 'jin'];
+  static const List<String> weightUnitOptions = ['kg', 'jin'];
 
   // 中文文案映射
   static const Map<String, String> labels = {

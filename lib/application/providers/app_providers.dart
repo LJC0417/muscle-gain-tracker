@@ -6,12 +6,13 @@
 ///   - 暴露统一的 FutureProvider 给 UI 层 await
 library;
 
-import 'dart:async';
 import 'dart:convert';
 
+import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/database.dart';
+import '../../domain/calc/calc.dart';
 import '../../domain/plan/plan.dart';
 import 'database_provider.dart';
 

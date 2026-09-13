@@ -67,7 +67,9 @@ class TodayPage extends ConsumerWidget {
                 if (p == null) return const SizedBox.shrink();
                 final goalAsync = ref.watch(goalStreamProvider);
                 return goalAsync.when(
-                  data: (g) => _BasicInfoCard(p: p, g: g),
+                  data: (g) => g == null
+                      ? const SizedBox.shrink()
+                      : _BasicInfoCard(p: p, g: g),
                   loading: () => const SizedBox.shrink(),
                   error: (_, __) => const SizedBox.shrink(),
                 );

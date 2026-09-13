@@ -161,7 +161,7 @@ List<Exercise> availableExercises(
 
 /// 预计时长（分钟）。
 int estimateMinutes(List<PlanEntry> entries) {
-  var sec = AppConfig.warmupSec;
+  double sec = AppConfig.warmupSec.toDouble();
   for (final en in entries) {
     final avgReps = ((en.repLow + en.repHigh) / 2).toDouble();
     sec += en.targetSets *

@@ -39,12 +39,10 @@ List<FilledPoint> gapFill(
   String from,
   String to,
 ) {
-  final list = weights.toList();
+  final list = _normalize(weights);
   final known = <String, num>{};
   for (final w in list) {
-    final d = w.date as String;
-    final k = w.kg as num;
-    known[d] = k;
+    known[w.date] = w.kg;
   }
   final out = <FilledPoint>[];
   for (final d in D.eachDay(from, to)) {
@@ -56,12 +54,12 @@ List<FilledPoint> gapFill(
     WeightPointLite? prev;
     WeightPointLite? next;
     for (final w in list) {
-      final wd = w.date as String;
-      if (wd < d && (prev == null || wd > prev.date)) {
-        prev = WeightPointLite(wd, w.kg as num);
+      final wd = w.date;
+      if (wd.compareTo(d) < 0 && (prev == null || wd.compareTo(prev.date) > 0)) {
+        prev = w;
       }
-      if (wd > d && (next == null || wd < next.date)) {
-        next = WeightPointLite(wd, w.kg as num);
+      if (wd.compareTo(d) > 0 && (next == null || wd.compareTo(next.date) < 0)) {
+        next = w;
       }
     }
     if (prev != null && next != null) {
@@ -82,33 +80,42 @@ List<FilledPoint> gapFill(
   return out;
 }
 
-/// 7 日滑动均线。窗口内真实点 >= MA7_MIN_POINTS 才计算。
+/// 7 日滑动均线。全序列真实点 >= MA7_MIN_POINTS 才计算（窗口含补值点）。
 List<MaPoint> movingAverage7(List<FilledPoint> series) {
   final out = <MaPoint>[];
+  final totalReal = series.where((p) => p.real).length;
   for (var i = 0; i < series.length; i++) {
+    if (totalReal < AppConfig.ma7MinPoints) {
+      out.add(MaPoint(series[i].date, null, series[i].real));
+      continue;
+    }
     final start = (i - (AppConfig.ma7Window - 1)) < 0 ? 0 : i - (AppConfig.ma7Window - 1);
     final window = series.sublist(start, i + 1);
-    final realCount = window.where((p) => p.real).length;
-    if (realCount >= AppConfig.ma7MinPoints) {
-      final sum = window.fold<num>(0, (a, p) => a + p.kg);
-      out.add(MaPoint(series[i].date, R.r2(sum / window.length), series[i].real));
-    } else {
-      out.add(MaPoint(series[i].date, null, series[i].real));
-    }
+    final sum = window.fold<num>(0, (a, p) => a + p.kg);
+    out.add(MaPoint(series[i].date, R.r2(sum / window.length), series[i].real));
   }
   return out;
 }
 
+/// 归一化：Map{date,kg} 或带 date/kg 属性的对象 → WeightPointLite。
+List<WeightPointLite> _normalize(Iterable<dynamic> weights) {
+  return [
+    for (final w in weights)
+      if (w is Map)
+        WeightPointLite(w['date'] as String, w['kg'] as num)
+      else
+        WeightPointLite(w.date as String, w.kg as num),
+  ];
+}
+
 /// 周均体重（mondayDate..mondayDate+6）。记录 < WEEK_AVG_MIN_DAYS 返回 null。
 double? weekAvg(Iterable<dynamic> weights, String mondayDate) {
-  if (weights == null || mondayDate == null) return null;
-  final end = D.addDays(mondayDate, 6);
-  final pts = weights.where((w) {
-    final d = w.date as String;
-    return d.compareTo(mondayDate) >= 0 && d.compareTo(end) <= 0;
+  final pts = _normalize(weights).where((w) {
+    final d = w.date;
+    return d.compareTo(mondayDate) >= 0 && d.compareTo(D.addDays(mondayDate, 6)) <= 0;
   }).toList();
   if (pts.length < AppConfig.weekAvgMinDays) return null;
-  final sum = pts.fold<num>(0, (a, w) => a + (w.kg as num));
+  final sum = pts.fold<num>(0, (a, w) => a + w.kg);
   return R.r2(sum / pts.length);
 }
 

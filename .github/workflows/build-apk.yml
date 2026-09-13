@@ -36,9 +36,6 @@ jobs:
           dart --version
           java -version
 
-      - name: Generate Android platform files (flutter create)
-        run: flutter create --platforms=android --org com.ljc --project-name muscle_gain_tracker .
-
       - name: Install Flutter dependencies
         run: flutter pub get
 

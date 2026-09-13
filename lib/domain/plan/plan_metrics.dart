@@ -64,7 +64,8 @@ num e1RM(num weightKg, num reps) {
 /// 整场容量（kg）。
 num sessionVolume(List<WorkoutSet> sets) {
   if (sets.isEmpty) return 0;
-  final sum = sets.fold<num>(0, (a, s) => a + (s.volumeKg ?? 0));
+  final sum = sets.fold<num>(
+      0, (a, s) => a + setVolume(s.weightKg, s.reps, s.isBodyweight));
   return R.r1(sum);
 }
 

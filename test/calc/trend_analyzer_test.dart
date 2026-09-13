@@ -195,7 +195,7 @@ void main() {
       expect(week.to, '2025-03-15');
 
       final month = rangeOf('month', '2025-03-15', null);
-      expect(month.from, '2025-02-15'); // 30 天
+      expect(month.from, '2025-02-14'); // 30 天（含端点：03-15 往前 29 天）
       expect(month.to, '2025-03-15');
 
       final quarter = rangeOf('quarter', '2025-03-15', null);

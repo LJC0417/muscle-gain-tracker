@@ -15,6 +15,7 @@ import 'package:go_router/go_router.dart';
 import '../../application/plan_regen.dart';
 import '../../application/providers/app_providers.dart';
 import '../../application/providers/database_provider.dart';
+import '../../core/constants/app_config.dart';
 import '../../data/database.dart';
 import '../../data/seed_loader.dart';
 import '../../domain/calc/calc.dart';
@@ -67,7 +68,7 @@ class _MePageState extends ConsumerState<MePage> {
               const SizedBox(height: 12),
               _actionsCard(context),
               const SizedBox(height: 12),
-              const _aboutCard(),
+              const _AboutCard(),
             ],
           );
         },
