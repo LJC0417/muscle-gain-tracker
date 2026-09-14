@@ -1,5 +1,5 @@
 /// 应用底部 Tab 容器（ARCHITECTURE F03）
-/// 5 个 tab：今日 / 训练 / 饮食 / 数据 / 我的
+/// 6 个 tab：今日 / 训练 / 睡眠 / 饮食 / 数据 / 我的
 /// 选中时高亮（primary 橙）；未选中灰色。
 library;
 
@@ -35,6 +35,11 @@ class AppScaffold extends StatelessWidget {
             icon: Icon(Icons.fitness_center_outlined),
             selectedIcon: Icon(Icons.fitness_center, color: Color(0xFFFF7A30)),
             label: '训练',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.bedtime_outlined),
+            selectedIcon: Icon(Icons.bedtime, color: Color(0xFF4C6EF5)),
+            label: '睡眠',
           ),
           NavigationDestination(
             icon: Icon(Icons.restaurant_outlined),

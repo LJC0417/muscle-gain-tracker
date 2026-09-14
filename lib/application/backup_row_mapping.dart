@@ -25,6 +25,9 @@ const backupDateColumns = <String, Set<String>>{
   'workoutSets': {'createdAt'},
   'weeklyReviews': {'createdAt'},
   'customFoods': {'createdAt'},
+  'sleepSessions': {'bedtimeStart', 'bedtimeEnd', 'updatedAt'},
+  'sleepStageRows': {'startAt', 'endAt'},
+  'sleepMetrics': {'updatedAt'},
 };
 
 /// 把备份 JSON 的一行映射成「实际表列 → SQLite 值」：

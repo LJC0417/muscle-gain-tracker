@@ -15,6 +15,7 @@ import 'package:go_router/go_router.dart';
 import '../pages/diet_page.dart';
 import '../pages/me_page.dart';
 import '../pages/onboarding_page.dart';
+import '../pages/sleep_page.dart';
 import '../pages/stats_page.dart';
 import '../pages/today_page.dart';
 import '../pages/training_page.dart';
@@ -67,6 +68,14 @@ GoRouter buildAppRouter(ValueListenable<bool?> onboardingDone) {
               GoRoute(
                 path: '/training',
                 builder: (context, state) => const TrainingPage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/sleep',
+                builder: (context, state) => const SleepPage(),
               ),
             ],
           ),

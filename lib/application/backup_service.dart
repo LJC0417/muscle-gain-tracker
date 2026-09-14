@@ -41,6 +41,9 @@ Future<Map<String, dynamic>> _dumpAll(AppDatabase db) async {
   final mealNames = await _rows(db, db.mealNames);
   final appSettings = await _rows(db, db.appSettings);
   final customFoods = await _rows(db, db.customFoods);
+  final sleepSessions = await _rows(db, db.sleepSessions);
+  final sleepStageRows = await _rows(db, db.sleepStageRows);
+  final sleepMetrics = await _rows(db, db.sleepMetrics);
 
   return {
     'app': 'muscle-gain-tracker',
@@ -57,6 +60,9 @@ Future<Map<String, dynamic>> _dumpAll(AppDatabase db) async {
     'mealNames': mealNames,
     'appSettings': appSettings,
     'customFoods': customFoods,
+    'sleepSessions': sleepSessions,
+    'sleepStageRows': sleepStageRows,
+    'sleepMetrics': sleepMetrics,
   };
 }
 
@@ -102,6 +108,9 @@ Future<String> importBackup(AppDatabase db, String content) async {
   final mealNames = await arr('mealNames');
   final appSettings = await arr('appSettings');
   final customFoods = await arr('customFoods');
+  final sleepSessions = await arr('sleepSessions');
+  final sleepStageRows = await arr('sleepStageRows');
+  final sleepMetrics = await arr('sleepMetrics');
 
   await db.transaction(() async {
     // 清空 + 恢复必须在同一个事务里：任何一步失败整体回滚，
@@ -118,6 +127,9 @@ Future<String> importBackup(AppDatabase db, String content) async {
     await _insertAll(db, db.mealNames, mealNames);
     await _insertAll(db, db.appSettings, appSettings);
     await _insertAll(db, db.customFoods, customFoods);
+    await _insertAll(db, db.sleepSessions, sleepSessions);
+    await _insertAll(db, db.sleepStageRows, sleepStageRows);
+    await _insertAll(db, db.sleepMetrics, sleepMetrics);
   });
 
   final total = profiles.length +

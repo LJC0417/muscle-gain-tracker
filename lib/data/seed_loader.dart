@@ -110,6 +110,9 @@ Future<void> wipeAllUserData(AppDatabase db) async {
     await db.delete(db.appSettings).go();
     await db.delete(db.customFoods).go();
     await db.delete(db.aiReviewMeta).go();
+    await db.delete(db.sleepSessions).go();
+    await db.delete(db.sleepStageRows).go();
+    await db.delete(db.sleepMetrics).go();
     // Profiles / Goals 整行删除，重新走引导；Exercises 表保留内置。
     await db.delete(db.profiles).go();
     await db.delete(db.goals).go();

@@ -1,9 +1,10 @@
 /// Drift 数据库（ARCHITECTURE F01 完成版）
-/// 共 13 张表：
+/// 共 16 张表：
 ///   - 核心 6 张：profile / goal / weight_point / food_log /
 ///                  training_session / workout_set
 ///   - 扩展 7 张：exercise / habit / weekly_review /
 ///                  meal_names / app_settings / custom_food / ai_review_meta
+///   - 睡眠 3 张（v2）：sleep_session / sleep_stage_row / sleep_metric
 ///
 /// 设计原则：
 ///   - 所有时间字段用本地 DateTime（存为 Unix 毫秒或 yyyy-MM-dd 字符串，避免时区错乱）
@@ -232,6 +233,49 @@ class AiReviewMeta extends Table {
   Set<Column> get primaryKey => {weekStart};
 }
 
+/// ════════ 睡眠（v2 新增，来源 Health Connect / vivo 健康）════════
+
+/// 睡眠会话（一晚一行；date = 起床日 yyyy-MM-dd）。
+@DataClassName('SleepSessionData')
+class SleepSessions extends Table {
+  TextColumn get date => text().withLength(min: 10, max: 10)();
+  DateTimeColumn get bedtimeStart => dateTime()(); // 入床/入睡开始
+  DateTimeColumn get bedtimeEnd => dateTime()(); // 起床
+  TextColumn get source =>
+      text().withDefault(const Constant('health_connect'))();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {date};
+}
+
+/// 睡眠阶段段（Health Connect 的 SleepStage 逐段）。
+@DataClassName('SleepStageRow')
+class SleepStageRows extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get date => text().withLength(min: 10, max: 10)(); // 起床日
+  TextColumn get stage => text()(); // deep | light | rem | awake
+  DateTimeColumn get startAt => dateTime()();
+  DateTimeColumn get endAt => dateTime()();
+}
+
+/// 睡眠体征（一晚一行；可空 = 当晚没有该数据源）。
+@DataClassName('SleepMetricData')
+class SleepMetrics extends Table {
+  TextColumn get date => text().withLength(min: 10, max: 10)();
+  RealColumn get avgHr => real().nullable()(); // bpm
+  RealColumn get minHr => real().nullable()();
+  RealColumn get maxHr => real().nullable()();
+  RealColumn get respirationRate => real().nullable()(); // 次/分
+  RealColumn get spo2Avg => real().nullable()(); // %
+  RealColumn get spo2Min => real().nullable()();
+  RealColumn get hrvMs => real().nullable()(); // RMSSD ms
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {date};
+}
+
 @DriftDatabase(
   tables: [
     Profiles,
@@ -247,17 +291,27 @@ class AiReviewMeta extends Table {
     AppSettings,
     CustomFoods,
     AiReviewMeta,
+    SleepSessions,
+    SleepStageRows,
+    SleepMetrics,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.createTable(sleepSessions);
+            await m.createTable(sleepStageRows);
+            await m.createTable(sleepMetrics);
+          }
+        },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON;');
         },
