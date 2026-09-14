@@ -24,7 +24,10 @@ jobs:
           distribution: 'temurin'
 
       - name: Install Android SDK platform 35
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" > /dev/null
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" | tail -n 3
+          ls -l "$ANDROID_HOME/platforms/android-35/android.jar"
 
       - name: Set up Flutter 3.22.x (stable)
         uses: subosito/flutter-action@v2
