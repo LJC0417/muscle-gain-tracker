@@ -10,19 +10,14 @@ import 'package:share_plus/share_plus.dart';
 
 import '../data/database.dart';
 import '../data/seed_loader.dart' show wipeAllUserData;
+import 'backup_row_mapping.dart' show backupDateColumns, mapBackupRow;
+
+export 'backup_row_mapping.dart' show camelToSnake, mapBackupRow;
 
 const _backupVersion = 1;
 
-/// 各表中的 DateTime 列（导入时把 ISO 字符串还原为 DateTime）。
-const _dateColumns = <String, Set<String>>{
-  'profiles': {'createdAt', 'updatedAt'},
-  'goals': {'lastAdjustedAt', 'updatedAt'},
-  'foodLogs': {'createdAt'},
-  'trainingSessions': {'startedAt', 'finishedAt'},
-  'workoutSets': {'createdAt'},
-  'weeklyReviews': {'createdAt'},
-  'customFoods': {'createdAt'},
-};
+/// 各表中的 DateTime 列定义见 backup_row_mapping.dart（backupDateColumns）。
+final _dateColumns = backupDateColumns;
 
 Future<List<Map<String, dynamic>>> _rows(
   AppDatabase db,
@@ -108,8 +103,10 @@ Future<String> importBackup(AppDatabase db, String content) async {
   final appSettings = await arr('appSettings');
   final customFoods = await arr('customFoods');
 
-  await wipeAllUserData(db);
   await db.transaction(() async {
+    // 清空 + 恢复必须在同一个事务里：任何一步失败整体回滚，
+    // 不能像以前那样先清空再插入（插入失败 = 用户数据被清空且没有恢复）。
+    await wipeAllUserData(db);
     await _insertAll(db, db.profiles, profiles);
     await _insertAll(db, db.goals, goals);
     await _insertAll(db, db.weightPoints, weightPoints);
@@ -133,32 +130,35 @@ Future<String> importBackup(AppDatabase db, String content) async {
   return '已恢复 $total 条记录';
 }
 
-/// 原始 map 逐行插入；先还原 DateTime 列，再用参数化 SQL 写入。
+/// 原始 map 逐行插入；先按实际表列做映射，再用参数化 SQL 写入。
 Future<void> _insertAll(
   AppDatabase db,
   TableInfo<Table, dynamic> table,
   List<Map<String, dynamic>> rows,
 ) async {
+  if (rows.isEmpty) return;
   final dateCols = _dateColumns[table.actualTableName] ?? const <String>{};
+  final colsInTable = await _actualColumns(db, table.actualTableName);
   for (final raw in rows) {
-    final row = Map<String, Object?>.from(raw);
-    for (final k in dateCols) {
-      final v = row[k];
-      if (v is String) {
-        final d = DateTime.tryParse(v);
-        if (d != null) row[k] = d;
-      }
-    }
+    final row = mapBackupRow(raw, colsInTable, dateCols);
     if (row.isEmpty) continue;
     final cols = row.keys.toList();
     final placeholders = List.filled(cols.length, '?').join(', ');
-    final values = [for (final c in cols) row[c]];
     await db.customStatement(
       'INSERT OR REPLACE INTO ${table.actualTableName} '
       '(${cols.join(', ')}) VALUES ($placeholders)',
-      values,
+      [for (final c in cols) row[c]],
     );
   }
+}
+
+/// 实际存在于 SQLite 表中的列名（PRAGMA table_info）。
+Future<Set<String>> _actualColumns(AppDatabase db, String tableName) async {
+  final rows = await db.customSelect('PRAGMA table_info($tableName)').get();
+  return {
+    for (final r in rows)
+      if (r.data['name'] is String) r.data['name'] as String,
+  };
 }
 
 String _p2(int n) => n < 10 ? '0$n' : '$n';
