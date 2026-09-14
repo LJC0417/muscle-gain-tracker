@@ -36,12 +36,16 @@ jobs:
           dart --version
           java -version
 
-      - name: Install Android SDK Platform 35
+      - name: Install Android SDK Platform 35 + new aapt2
         run: |
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           echo "y" | "$SDKM" --licenses > /dev/null || true
-          "$SDKM" "platforms;android-35" "build-tools;34.0.0"
+          "$SDKM" "platforms;android-35" "build-tools;35.0.0"
           ls "$ANDROID_HOME/platforms" | grep android-35
+          # AGP 7.3 自带的 aapt2 解析不了 android-35 资源表（RES_TABLE_TYPE_TYPE
+          # entry offsets overlap）→ 用官方属性把 aapt2 换成 build-tools 35 的
+          echo "android.aapt2FromMavenOverride=$ANDROID_HOME/build-tools/35.0.0/aapt2" \
+            >> android/gradle.properties
 
       - name: Install Flutter dependencies
         run: flutter pub get
