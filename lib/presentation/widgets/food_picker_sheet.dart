@@ -14,6 +14,7 @@ import '../../application/providers/database_provider.dart';
 import '../../core/constants/app_config.dart';
 import '../../data/database.dart';
 import '../theme/app_theme.dart';
+import '../widgets/mg_widgets.dart';
 
 /// 打开添加饮食弹层。[initialMeal] 可从外部指定餐别。
 Future<void> showFoodPickerSheet(
@@ -197,11 +198,11 @@ class _FoodPickerSheetState extends ConsumerState<FoodPickerSheet> {
           meal: _meal,
           foodId: f.id,
           foodName: f.name,
-          grams: Value(f.servingGrams),
-          kcal: Value(f.kcal),
-          p: Value(f.p),
-          c: Value(f.c),
-          f: Value(f.f),
+          grams: f.servingGrams,
+          kcal: f.kcal,
+          p: f.p,
+          c: f.c,
+          f: f.f,
           isEstimate: Value(f.isEstimate),
           createdAt: Value(DateTime.now()),
         ));

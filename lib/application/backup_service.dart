@@ -110,17 +110,17 @@ Future<String> importBackup(AppDatabase db, String content) async {
 
   await wipeAllUserData(db);
   await db.transaction(() async {
-    await db.batch((b) => _insertAll(b, db.profiles, profiles));
-    await db.batch((b) => _insertAll(b, db.goals, goals));
-    await db.batch((b) => _insertAll(b, db.weightPoints, weightPoints));
-    await db.batch((b) => _insertAll(b, db.foodLogs, foodLogs));
-    await db.batch((b) => _insertAll(b, db.trainingSessions, trainingSessions));
-    await db.batch((b) => _insertAll(b, db.workoutSets, workoutSets));
-    await db.batch((b) => _insertAll(b, db.habits, habits));
-    await db.batch((b) => _insertAll(b, db.weeklyReviews, weeklyReviews));
-    await db.batch((b) => _insertAll(b, db.mealNames, mealNames));
-    await db.batch((b) => _insertAll(b, db.appSettings, appSettings));
-    await db.batch((b) => _insertAll(b, db.customFoods, customFoods));
+    await _insertAll(db, db.profiles, profiles);
+    await _insertAll(db, db.goals, goals);
+    await _insertAll(db, db.weightPoints, weightPoints);
+    await _insertAll(db, db.foodLogs, foodLogs);
+    await _insertAll(db, db.trainingSessions, trainingSessions);
+    await _insertAll(db, db.workoutSets, workoutSets);
+    await _insertAll(db, db.habits, habits);
+    await _insertAll(db, db.weeklyReviews, weeklyReviews);
+    await _insertAll(db, db.mealNames, mealNames);
+    await _insertAll(db, db.appSettings, appSettings);
+    await _insertAll(db, db.customFoods, customFoods);
   });
 
   final total = profiles.length +
@@ -133,8 +133,12 @@ Future<String> importBackup(AppDatabase db, String content) async {
   return '已恢复 $total 条记录';
 }
 
-/// 原始 map 批量插入；先还原 DateTime 列。
-void _insertAll(Batch b, TableInfo table, List<Map<String, dynamic>> rows) {
+/// 原始 map 逐行插入；先还原 DateTime 列，再用参数化 SQL 写入。
+Future<void> _insertAll(
+  AppDatabase db,
+  TableInfo<Table, dynamic> table,
+  List<Map<String, dynamic>> rows,
+) async {
   final dateCols = _dateColumns[table.actualTableName] ?? const <String>{};
   for (final raw in rows) {
     final row = Map<String, Object?>.from(raw);
@@ -145,7 +149,15 @@ void _insertAll(Batch b, TableInfo table, List<Map<String, dynamic>> rows) {
         if (d != null) row[k] = d;
       }
     }
-    b.insert(table, row, mode: InsertMode.insertOrReplace);
+    if (row.isEmpty) continue;
+    final cols = row.keys.toList();
+    final placeholders = List.filled(cols.length, '?').join(', ');
+    final values = [for (final c in cols) row[c]];
+    await db.customStatement(
+      'INSERT OR REPLACE INTO ${table.actualTableName} '
+      '(${cols.join(', ')}) VALUES ($placeholders)',
+      values,
+    );
   }
 }
 

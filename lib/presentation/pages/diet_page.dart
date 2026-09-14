@@ -170,7 +170,7 @@ class _DietPageState extends ConsumerState<DietPage>
   }
 
   Future<void> _quickAdd(FoodLite f) async {
-    final db = ref.read(databaseReadyProvider);
+    final db = ref.read(databaseProvider);
     final today = ref.read(todayStringProvider);
     await db.into(db.foodLogs).insert(FoodLogsCompanion.insert(
           id: 'fl_${DateTime.now().millisecondsSinceEpoch}',
@@ -178,11 +178,11 @@ class _DietPageState extends ConsumerState<DietPage>
           meal: 'snack',
           foodId: f.id,
           foodName: f.name,
-          grams: Value(f.servingGrams),
-          kcal: Value(f.kcal),
-          p: Value(f.p),
-          c: Value(f.c),
-          f: Value(f.f),
+          grams: f.servingGrams,
+          kcal: f.kcal,
+          p: f.p,
+          c: f.c,
+          f: f.f,
           isEstimate: Value(f.isEstimate),
           createdAt: Value(DateTime.now()),
         ));
@@ -196,7 +196,7 @@ class _DietPageState extends ConsumerState<DietPage>
 
   /// 餐别命名编辑弹层。
   Future<void> _editMealNames() async {
-    final db = ref.read(databaseReadyProvider);
+    final db = ref.read(databaseProvider);
     final current = ref.read(mealNamesProvider);
     final ctrls = {
       for (final k in AppConfig.mealSlot)
@@ -277,8 +277,6 @@ Widget _overviewCard(
   AsyncValue<List<FoodLogData>> logsAsync,
 ) {
   final remain = goal.kcal - intake.kcal;
-  final logCount =
-      (logsAsync.value ?? const <FoodLogData>[]).length;
   return Padding(
     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
     child: MgCard(
@@ -344,7 +342,7 @@ Future<void> _clearTodayFood(BuildContext context, WidgetRef ref) async {
     ),
   );
   if (res != true) return;
-  final db = ref.read(databaseReadyProvider);
+  final db = ref.read(databaseProvider);
   final today = ref.read(todayStringProvider);
   await (db.delete(db.foodLogs)..where((t) => t.date.equals(today))).go();
   ref.invalidate(todayFoodLogsProvider);

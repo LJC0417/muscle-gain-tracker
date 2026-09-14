@@ -15,6 +15,7 @@ import '../../application/providers/app_providers.dart';
 import '../../application/providers/database_provider.dart';
 import '../../core/constants/app_config.dart';
 import '../../data/database.dart';
+import '../../domain/plan/plan.dart';
 import '../theme/app_theme.dart';
 
 // ════════════════════════════════════════════════════════════════════

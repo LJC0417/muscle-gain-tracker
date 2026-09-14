@@ -1,13 +1,13 @@
 /// 训练历史 / 体重历史 Provider（P-05 prefill、P-06 PR、P-08 趋势）
 library;
 
-import 'package:drift/drift.dart' show OrderingTerm;
+import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/database.dart';
 import '../domain/plan/plan.dart';
-import 'app_providers.dart';
-import 'database_provider.dart';
+import 'providers/app_providers.dart';
+import 'providers/database_provider.dart';
 
 /// 体重点流（DB 变化自动刷新，趋势图/体重卡用）。
 final weightPointsStreamProvider =
@@ -26,8 +26,8 @@ final allSessionsProvider =
   final sessions = await (db.select(db.trainingSessions)
         ..where((t) => t.status.equals('completed'))
         ..orderBy([
-          OrderingTerm.desc(t.date),
-          OrderingTerm.desc(t.startedAt),
+          (t) => OrderingTerm.desc(t.date),
+          (t) => OrderingTerm.desc(t.startedAt),
         ]))
       .get();
   if (sessions.isEmpty) return const <TrainingSession>[];

@@ -11,7 +11,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/database.dart';
-import 'database_provider.dart';
+import 'providers/database_provider.dart';
 import 'providers/app_providers.dart' show appSettingsProvider;
 
 /// 统一食物模型（每份口径）。

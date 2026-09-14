@@ -5,10 +5,8 @@
 ///   - 数据管理卡：JSON 备份导出 / 导入 / 重新引导 / 清空
 library;
 
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +14,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../application/backup_service.dart';
 import '../../application/foods_provider.dart';
+import '../../application/history_providers.dart';
 import '../../application/notification_service.dart';
 import '../../application/plan_regen.dart';
 import '../../application/providers/app_providers.dart';

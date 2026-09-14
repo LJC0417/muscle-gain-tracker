@@ -4,6 +4,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'application/notification_service.dart';
 import 'application/providers/app_providers.dart';
@@ -73,6 +74,8 @@ class _Gate extends ConsumerStatefulWidget {
 
 class _GateState extends ConsumerState<_Gate> {
   bool _rescheduled = false;
+  GoRouter? _router;
+  bool? _routerOnboarded;
 
   @override
   Widget build(BuildContext context) {
@@ -85,12 +88,16 @@ class _GateState extends ConsumerState<_Gate> {
           Future<void>(() => NotificationService.instance.reschedule(s));
         }
         final onboarded = s['onboardingDone'] == '1';
-        final router = buildAppRouter(startWithOnboarding: !onboarded);
+        // 只在引导状态切换时重建路由，避免设置变化把用户踢回首页
+        if (_router == null || _routerOnboarded != onboarded) {
+          _router = buildAppRouter(startWithOnboarding: !onboarded);
+          _routerOnboarded = onboarded;
+        }
         return MaterialApp.router(
           title: '增肌管理',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light(),
-          routerConfig: router,
+          routerConfig: _router,
         );
       },
       loading: () => const _SplashScaffold(),

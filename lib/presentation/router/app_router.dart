@@ -16,8 +16,12 @@ import '../pages/training_page.dart';
 import '../pages/workout_run_page.dart';
 import '../widgets/app_scaffold.dart';
 
+/// 根导航器（训练执行页全屏显示在 Tab 壳之上）。
+final rootNavKey = GlobalKey<NavigatorState>();
+
 GoRouter buildAppRouter({required bool startWithOnboarding}) {
   return GoRouter(
+    navigatorKey: rootNavKey,
     initialLocation: startWithOnboarding ? '/onboarding' : '/today',
     routes: [
       GoRoute(
@@ -26,7 +30,7 @@ GoRouter buildAppRouter({required bool startWithOnboarding}) {
       ),
       GoRoute(
         path: '/workout-run/:code',
-        parentNavigatorKey: rootNavigatorKey,
+        parentNavigatorKey: rootNavKey,
         builder: (context, state) {
           final code = Uri.decodeComponent(
             state.pathParameters['code'] ?? '',
