@@ -47,6 +47,7 @@ WeeklyReviewResult buildWeeklyReview({
   required List<FoodLogData> foodLogs,
   required List<TrainingSession> sessions,
   required ResolvedGoalView goal,
+  List<HabitData> habits = const [],
   double? currentWeightKg,
 }) {
   final lite = _toLite(weights);
@@ -95,6 +96,23 @@ WeeklyReviewResult buildWeeklyReview({
         '平均单次 ${(tStats.avgDurationSec / 60).round()} 分钟。');
   } else {
     parts.add('本周暂无训练记录，建议按排期补齐频率，循序渐进才能稳定增肌。');
+  }
+
+  // 睡眠（打卡记录；sleepHours<=0 视为未记录）
+  final sleepRows = [
+    for (final h in habits)
+      if (h.date.compareTo(range.from) >= 0 &&
+          h.date.compareTo(range.to) <= 0 &&
+          h.sleepHours > 0)
+        h,
+  ];
+  if (sleepRows.isNotEmpty) {
+    final sleepAvg = sleepRows.map((h) => h.sleepHours).reduce((a, b) => a + b) /
+        sleepRows.length;
+    parts.add(sleepAvg < 7
+        ? '睡眠周均 ${sleepAvg.toStringAsFixed(1)} 小时（${sleepRows.length}/7 天记录），'
+            '低于 7 小时——恢复不足时体重不涨未必是吃不够，优先补觉。'
+        : '睡眠周均 ${sleepAvg.toStringAsFixed(1)} 小时（${sleepRows.length}/7 天记录），恢复状态良好。');
   }
 
   final String advice;

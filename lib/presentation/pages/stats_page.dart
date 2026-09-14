@@ -386,6 +386,15 @@ class _StatsPageState extends ConsumerState<StatsPage> {
     final profile = ref.read(profileStreamProvider).valueOrNull;
     final today = ref.read(todayStringProvider);
     final db = ref.read(databaseReadyProvider).requireValue;
+    // 睡眠/喝水打卡：取上周一至今，覆盖「本周 + 上周」两个聚合窗口
+    // （habits 一天一行数据量极小，直接全量拉回 Dart 侧过滤，避免引入 drift 比较扩展）
+    final monday = D.mondayOf(today);
+    final since = D.addDays(monday, -7);
+    final allHabits = await db.select(db.habits).get();
+    final habits = [
+      for (final h in allHabits)
+        if (h.date.compareTo(since) >= 0) h,
+    ];
 
     setState(() {
       _aiLoading = true;
@@ -399,6 +408,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
         foodLogs: foodLogs,
         sessions: sessions,
         exercises: exercises,
+        habits: habits,
         profile: profile,
         goalRow: goalRow,
         currentWeightKg: goalRow?.currentWeightKg,

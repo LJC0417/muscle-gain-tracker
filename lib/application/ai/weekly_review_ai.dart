@@ -84,6 +84,12 @@ class WeekAggregate {
   final int avgSessionMinutes;
   final int loggedDays;
 
+  /// 睡眠周均（小时）；null = 本周没有睡眠记录。
+  final double? sleepAvgHours;
+
+  /// 有睡眠记录的天数。
+  final int sleepLoggedDays;
+
   const WeekAggregate({
     required this.weekStart,
     required this.weekEnd,
@@ -96,6 +102,8 @@ class WeekAggregate {
     required this.totalVolumeKg,
     required this.avgSessionMinutes,
     required this.loggedDays,
+    this.sleepAvgHours,
+    this.sleepLoggedDays = 0,
   });
 }
 
@@ -105,6 +113,7 @@ WeekAggregate aggregateWeek({
   required List<FoodLogData> foodLogs,
   required List<TrainingSession> sessions,
   required ResolvedGoalView goal,
+  List<HabitData> habits = const [],
 }) {
   final weekEnd = D.addDays(weekStart, 6);
   final lite = <WeightPointLite>[
@@ -146,6 +155,18 @@ WeekAggregate aggregateWeek({
     dur += s.durationSec ?? 0;
   }
 
+  // 睡眠（打卡记录；sleepHours<=0 视为未记录）
+  final weekHabits = [
+    for (final h in habits)
+      if (h.date.compareTo(weekStart) >= 0 && h.date.compareTo(weekEnd) <= 0)
+        h,
+  ];
+  final sleepRows = weekHabits.where((h) => h.sleepHours > 0).toList();
+  final sleepAvg = sleepRows.isEmpty
+      ? null
+      : sleepRows.map((h) => h.sleepHours).reduce((a, b) => a + b) /
+          sleepRows.length;
+
   return WeekAggregate(
     weekStart: weekStart,
     weekEnd: weekEnd,
@@ -159,6 +180,8 @@ WeekAggregate aggregateWeek({
     avgSessionMinutes:
         done.isEmpty ? 0 : R.r0(dur / done.length / 60).toInt(),
     loggedDays: byDay.length,
+    sleepAvgHours: sleepAvg == null ? null : R.r1(sleepAvg),
+    sleepLoggedDays: sleepRows.length,
   );
 }
 
@@ -268,6 +291,13 @@ String buildReviewPrompt({
   b.writeln('训练：完成 ${thisWeek.trainingCompleted} 次，'
       '总容量 ${thisWeek.totalVolumeKg.toStringAsFixed(1)} kg，'
       '平均单次 ${thisWeek.avgSessionMinutes} 分钟');
+  if (thisWeek.sleepAvgHours != null) {
+    final s = thisWeek.sleepAvgHours!;
+    b.writeln('睡眠：周均 ${s.toStringAsFixed(1)} 小时（记录 ${thisWeek.sleepLoggedDays}/7 天）'
+        '${s < 7 ? '，低于 7 小时、恢复可能不足' : ''}');
+  } else {
+    b.writeln('睡眠：本周未记录（如有睡眠打卡数据会一并分析）');
+  }
   if (thisWeek.loggedDays < 3) {
     b.writeln('提示：本周饮食记录天数偏少（${thisWeek.loggedDays} 天），日均值参考性有限');
   }
@@ -275,7 +305,8 @@ String buildReviewPrompt({
   b.writeln('【上周对比】');
   b.writeln('体重周均：${f1(lastWeek.weightAvg)} kg；'
       '日均热量 ${lastWeek.kcalAvg} kcal；日均蛋白 ${lastWeek.proteinAvg} g；'
-      '训练 ${lastWeek.trainingCompleted} 次，容量 ${lastWeek.totalVolumeKg.toStringAsFixed(1)} kg');
+      '训练 ${lastWeek.trainingCompleted} 次，容量 ${lastWeek.totalVolumeKg.toStringAsFixed(1)} kg'
+      '${lastWeek.sleepAvgHours == null ? '' : '；睡眠周均 ${lastWeek.sleepAvgHours!.toStringAsFixed(1)} 小时'}');
   b.writeln();
   if (highlights.isNotEmpty) {
     b.writeln('【动作进展】');
@@ -393,6 +424,7 @@ Future<AiReviewOutcome> generateAiWeeklyReview({
   required List<FoodLogData> foodLogs,
   required List<TrainingSession> sessions,
   required List<ExerciseData> exercises,
+  List<HabitData> habits = const [],
   ProfileData? profile,
   GoalData? goalRow,
   double? currentWeightKg,
@@ -407,6 +439,7 @@ Future<AiReviewOutcome> generateAiWeeklyReview({
     sessions: sessions,
     goal: goal,
     currentWeightKg: currentWeightKg,
+    habits: habits,
   );
 
   if (!force) {
@@ -438,6 +471,7 @@ Future<AiReviewOutcome> generateAiWeeklyReview({
     foodLogs: foodLogs,
     sessions: sessions,
     goal: goal,
+    habits: habits,
   );
   final lastWeek = aggregateWeek(
     weekStart: D.addDays(localResult.weekStart, -7),
@@ -445,6 +479,7 @@ Future<AiReviewOutcome> generateAiWeeklyReview({
     foodLogs: foodLogs,
     sessions: sessions,
     goal: goal,
+    habits: habits,
   );
   final highlights = buildHighlights(
     weekStart: thisWeek.weekStart,
