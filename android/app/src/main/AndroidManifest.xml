@@ -2,6 +2,9 @@
     <!-- 本地通知（4 类提醒）所需权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- USE_EXACT_ALARM：Android 13+ 自动授予（侧载应用可用），保证提醒准时不被省电策略推迟；
+         SCHEDULE_EXACT_ALARM 覆盖 Android 12，需用户在弹窗里授权 -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>

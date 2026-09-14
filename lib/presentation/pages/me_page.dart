@@ -36,6 +36,7 @@ class MePage extends ConsumerStatefulWidget {
 class _MePageState extends ConsumerState<MePage> {
   bool _regenerating = false;
   bool _clearing = false;
+  bool _sendingTest = false;
 
   @override
   Widget build(BuildContext context) {
@@ -301,6 +302,29 @@ class _MePageState extends ConsumerState<MePage> {
               settings['notifyReviewEnabled'] == '1', (on) async {
             await _setSetting('notifyReviewEnabled', on ? '1' : '0');
           }),
+          const SizedBox(height: 4),
+          OutlinedButton.icon(
+            onPressed: _sendingTest
+                ? null
+                : () async {
+                    setState(() => _sendingTest = true);
+                    try {
+                      final msg =
+                          await NotificationService.instance.sendTestNotification();
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(msg), duration: const Duration(seconds: 4)),
+                      );
+                    } finally {
+                      if (mounted) setState(() => _sendingTest = false);
+                    }
+                  },
+            icon: const Icon(Icons.notifications_active_outlined, size: 18),
+            label: const Text('发送测试通知（验证提醒链路 / 手表同步）'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(44),
+            ),
+          ),
         ],
       ),
     );
