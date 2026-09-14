@@ -47,6 +47,7 @@ Future<SleepDay?> loadSleepDay(AppDatabase db, String date) async {
     spo2Avg: metric?.spo2Avg,
     spo2Min: metric?.spo2Min,
     hrvMs: metric?.hrvMs,
+    source: session.source,
   );
 }
 

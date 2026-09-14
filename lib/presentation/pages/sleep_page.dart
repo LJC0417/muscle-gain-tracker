@@ -12,6 +12,7 @@
 ///       无数据时给「连接手表数据」引导。
 library;
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,6 +21,7 @@ import '../../application/providers/database_provider.dart';
 import '../../application/sleep_models.dart';
 import '../../application/sleep_providers.dart';
 import '../../application/sleep_sync_service.dart';
+import '../../data/database.dart';
 import '../theme/app_theme.dart';
 
 /// 阶段配色（对齐主流睡眠 App 用色习惯）。
@@ -69,35 +71,49 @@ class _SleepPageState extends ConsumerState<SleepPage> {
       body: dayAsync.when(
         loading: () =>
             const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-        error: (e, _) => _emptyState('加载失败：$e'),
+        error: (e, _) => _emptyState('加载失败：$e', _dateOf(today, _offset)),
         data: (day) => ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
             _dateSwitcher(today),
             const SizedBox(height: 12),
             if (day == null)
-              _emptyState(_offset == 0
-                  ? '今晚还没有睡眠数据\n点右上角同步，或等明早手表数据同步后自动出现'
-                  : '这一晚没有睡眠数据')
+              _emptyState(
+                _offset == 0
+                    ? '今晚还没有睡眠数据\n可以手动记录，或点右上角尝试同步手表数据'
+                    : '这一晚没有睡眠数据',
+                date,
+              )
             else ...[
               _totalCard(day),
-              const SizedBox(height: 12),
-              _timelineCard(day),
+              if (day.hasStageDetail) ...[
+                const SizedBox(height: 12),
+                _timelineCard(day),
+              ],
               const SizedBox(height: 12),
               _metricsCard(day),
               const SizedBox(height: 12),
               _adviceCard(day),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () => _manualRecord(day.date),
+                child: Text(day.source == 'manual'
+                    ? '修改这一晚的记录'
+                    : '手动记录这一晚'),
+              ),
               const SizedBox(height: 8),
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.info_outline,
+                  const Icon(Icons.info_outline,
                       size: 14, color: AppPalette.textWeak),
-                  SizedBox(width: 6),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      '数据来源：Health Connect（vivo 健康）；如无数据，请在 vivo 健康的设置里开启「数据共享」',
-                      style:
-                          TextStyle(fontSize: 12, color: AppPalette.textSub),
+                      day.source == 'manual'
+                          ? '来源：手动记录（仅总时长；阶段与体征明细需要手表数据）'
+                          : '来源：Health Connect 手表同步；如同步无数据，本机可能不支持',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppPalette.textSub),
                     ),
                   ),
                 ],
@@ -143,6 +159,39 @@ class _SleepPageState extends ConsumerState<SleepPage> {
   void _toast(String msg) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  // ── 手动记录（Health Connect 不可用时的兜底）──
+
+  Future<void> _manualRecord(String date) async {
+    final entry = await showModalBottomSheet<_ManualEntry>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const _ManualSheet(),
+    );
+    if (entry == null || !mounted) return;
+    final db = await ref.read(databaseReadyProvider.future);
+    final wakeDate = DateTime.parse(date);
+    final wake = DateTime(wakeDate.year, wakeDate.month, wakeDate.day,
+        entry.wake.hour, entry.wake.minute);
+    var bed = DateTime(wakeDate.year, wakeDate.month, wakeDate.day,
+        entry.bed.hour, entry.bed.minute);
+    if (!bed.isBefore(wake)) bed = bed.subtract(const Duration(days: 1));
+    await (db.delete(db.sleepSessions)..where((t) => t.date.equals(date)))
+        .go();
+    await (db.delete(db.sleepStageRows)..where((t) => t.date.equals(date)))
+        .go();
+    await (db.delete(db.sleepMetrics)..where((t) => t.date.equals(date)))
+        .go();
+    await db.into(db.sleepSessions).insert(SleepSessionsCompanion.insert(
+          date: date,
+          bedtimeStart: bed,
+          bedtimeEnd: wake,
+          source: const Value('manual'),
+          updatedAt: Value(DateTime.now()),
+        ));
+    ref.invalidate(sleepNightProvider(date));
+    _toast('已保存');
   }
 
   // ════════════════════════════════════════════════════════════════
@@ -192,7 +241,7 @@ class _SleepPageState extends ConsumerState<SleepPage> {
     );
   }
 
-  Widget _emptyState(String text) {
+  Widget _emptyState(String text, String date) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(28),
@@ -211,11 +260,15 @@ class _SleepPageState extends ConsumerState<SleepPage> {
               style: const TextStyle(
                   fontSize: 14, height: 1.6, color: AppPalette.textSub)),
           const SizedBox(height: 16),
-          if (_offset == 0)
-            FilledButton(
-              onPressed: _syncing ? null : _sync,
-              child: const Text('连接手表数据'),
-            ),
+          FilledButton(
+            onPressed: () => _manualRecord(date),
+            child: const Text('手动记录这一晚'),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _syncing ? null : _sync,
+            child: const Text('尝试同步手表数据（Health Connect）'),
+          ),
         ],
       ),
     );
@@ -250,56 +303,60 @@ class _SleepPageState extends ConsumerState<SleepPage> {
             '睡眠总时长（卧床 ${hm(day.bedtimeMin)} – ${hm(day.wakeMin)}）',
             style: const TextStyle(fontSize: 13, color: AppPalette.textSub),
           ),
-          const SizedBox(height: 16),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              height: 14,
-              child: Row(
-                children: [
-                  for (final s in SleepStage.values)
-                    if (day.durationOf(s) > 0)
-                      Expanded(
-                        flex: day.durationOf(s),
-                        child: ColoredBox(
-                            color: _stageColors[s]!,
-                            child: const SizedBox.expand()),
-                      ),
-                ],
+          if (day.hasStageDetail) ...[
+            const SizedBox(height: 16),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                height: 14,
+                child: Row(
+                  children: [
+                    for (final s in SleepStage.values)
+                      if (day.durationOf(s) > 0)
+                        Expanded(
+                          flex: day.durationOf(s),
+                          child: ColoredBox(
+                              color: _stageColors[s]!,
+                              child: const SizedBox.expand()),
+                        ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 14),
-          ...SleepStage.values.reversed.map((s) {
-            final m = day.durationOf(s);
-            if (m == 0) return const SizedBox.shrink();
-            final pct = day.pctOf(s);
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 5),
-              child: Row(
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: _stageColors[s]!,
-                      shape: BoxShape.circle,
+            const SizedBox(height: 14),
+            ...SleepStage.values.reversed.map((s) {
+              final m = day.durationOf(s);
+              if (m == 0) return const SizedBox.shrink();
+              final pct = day.pctOf(s);
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: _stageColors[s]!,
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(stageLabels[s]!,
-                      style: const TextStyle(
-                          fontSize: 14, color: AppPalette.text)),
-                  const Spacer(),
-                  Text('${dur(m)} · $pct%',
-                      style: TextStyle(
-                          fontSize: 14,
-                          color: AppPalette.textSub,
-                          fontFeatures: const [FontFeature.tabularFigures()])),
-                ],
-              ),
-            );
-          }),
+                    const SizedBox(width: 8),
+                    Text(stageLabels[s]!,
+                        style: const TextStyle(
+                            fontSize: 14, color: AppPalette.text)),
+                    const Spacer(),
+                    Text('${dur(m)} · $pct%',
+                        style: TextStyle(
+                            fontSize: 14,
+                            color: AppPalette.textSub,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ])),
+                  ],
+                ),
+              );
+            }),
+          ],
         ],
       ),
     );
@@ -578,6 +635,136 @@ class _SleepPageState extends ConsumerState<SleepPage> {
         border: Border.all(color: AppPalette.border),
       ),
       child: child,
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 手动记录 bottom sheet
+// ════════════════════════════════════════════════════════════════
+
+class _ManualEntry {
+  final TimeOfDay bed;
+  final TimeOfDay wake;
+  const _ManualEntry(this.bed, this.wake);
+}
+
+class _ManualSheet extends StatefulWidget {
+  const _ManualSheet();
+
+  @override
+  State<_ManualSheet> createState() => _ManualSheetState();
+}
+
+class _ManualSheetState extends State<_ManualSheet> {
+  TimeOfDay _bed = const TimeOfDay(hour: 23, minute: 0);
+  TimeOfDay _wake = const TimeOfDay(hour: 7, minute: 0);
+
+  int get _durationMin {
+    var mins =
+        (_wake.hour * 60 + _wake.minute) - (_bed.hour * 60 + _bed.minute);
+    if (mins <= 0) mins += 1440;
+    return mins;
+  }
+
+  Future<void> _pick(bool isBed) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: isBed ? _bed : _wake,
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isBed) {
+        _bed = picked;
+      } else {
+        _wake = picked;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mins = _durationMin;
+    final valid = mins >= 60 && mins <= 16 * 60;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('手动记录睡眠',
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppPalette.text)),
+          const SizedBox(height: 4),
+          const Text('手动记录只有总时长（无阶段与体征明细）；\n手表数据接入后会被自动替换。',
+              style: TextStyle(
+                  fontSize: 12, height: 1.5, color: AppPalette.textSub)),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: _timeTile('入睡时间', _bed, () => _pick(true))),
+              const SizedBox(width: 12),
+              Expanded(child: _timeTile('起床时间', _wake, () => _pick(false))),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text('总时长：${dur(mins)}',
+              style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppPalette.text)),
+          if (!valid) ...[
+            const SizedBox(height: 4),
+            const Text('时长需在 1–16 小时之间',
+                style: TextStyle(fontSize: 12, color: AppPalette.danger)),
+          ],
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: valid
+                ? () => Navigator.pop(context, _ManualEntry(_bed, _wake))
+                : null,
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _timeTile(String label, TimeOfDay t, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppPalette.surfaceMuted,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 12, color: AppPalette.textSub)),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                Text(t.format(context),
+                    style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: AppPalette.text)),
+                const Spacer(),
+                const Icon(Icons.edit_outlined,
+                    size: 16, color: AppPalette.textSub),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

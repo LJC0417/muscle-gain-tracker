@@ -30,6 +30,9 @@ class SleepDay {
   final double? spo2Min;
   final double? hrvMs;
 
+  /// 数据来源：health_connect（手表同步）/ manual（手动记录）。
+  final String source;
+
   const SleepDay({
     required this.date,
     required this.windowStartMin,
@@ -44,7 +47,11 @@ class SleepDay {
     this.spo2Avg,
     this.spo2Min,
     this.hrvMs,
+    this.source = 'health_connect',
   });
+
+  /// 手动记录只有总时长，没有阶段/体征明细。
+  bool get hasStageDetail => segments.isNotEmpty;
 
   int durationOf(SleepStage s) => segments
       .where((g) => g.stage == s)
