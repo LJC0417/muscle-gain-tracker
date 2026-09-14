@@ -10,6 +10,7 @@ import 'dart:convert';
 
 import '../data/database.dart';
 import '../domain/plan/plan.dart';
+import 'providers/app_providers.dart' show StoredPlan;
 
 /// ════════ 单日分化模板（与 prototype/data/exercises.js 一致） ════════
 
@@ -130,8 +131,9 @@ Future<void> regenerateTrainingPlan(AppDatabase db) async {
                   .toList(),
             })
         .toList(),
-    'pattern': <int, String>{
-      for (var i = 1; i <= 7; i++) i: plan.pattern.at(i),
+    'pattern': <String, String>{
+      // jsonEncode 只接受 String 键，这里必须转成字符串
+      for (var i = 1; i <= 7; i++) '$i': plan.pattern.at(i),
     },
   };
 
@@ -141,4 +143,21 @@ Future<void> regenerateTrainingPlan(AppDatabase db) async {
           value: jsonEncode(planJson),
         ),
       );
+}
+
+/// 自愈：已完成引导但 AppSettings 里没有可用计划时，自动补生成一份。
+///
+/// 背景：旧版本因为 jsonEncode 不接受 int 键而抛异常，计划从未写入成功，
+/// 用户升级后会看到一个空计划。这里在启动时兜底修复。
+/// 返回 true 表示确实补生成了。
+Future<bool> ensureTrainingPlan(AppDatabase db) async {
+  final row = await (db.select(db.appSettings)
+        ..where((t) => t.key.equals('plan')))
+      .getSingleOrNull();
+  if (!StoredPlan.fromAppSettingsValue(row?.value).isEmpty) return false;
+
+  final profiles = await db.select(db.profiles).get();
+  if (profiles.isEmpty) return false; // 真的没做过引导，交给引导页处理
+  await regenerateTrainingPlan(db);
+  return true;
 }

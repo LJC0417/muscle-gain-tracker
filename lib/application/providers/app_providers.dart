@@ -68,7 +68,10 @@ final goalProvider = FutureProvider<GoalData?>((ref) async {
 /// 当前 goal（stream 版）。
 final goalStreamProvider = StreamProvider<GoalData?>((ref) {
   final db = ref.watch(databaseReadyProvider).requireValue;
-  return db.select(db.goals).watchSingleOrNull();
+  return (db.select(db.goals)
+        ..orderBy([(t) => OrderingTerm.asc(t.id)])
+        ..limit(1))
+      .watchSingleOrNull();
 });
 
 /// 全部 weight points（按 date 升序）。
@@ -377,7 +380,9 @@ class StoredPlan {
                 .toList(),
           };
         }).toList(),
-        'pattern': pattern,
+        // 必须是 String 键：dart:convert 的 jsonEncode 遇到非 String 键会抛
+        // JsonUnsupportedObjectError（曾导致保存计划/自定义训练日全部失败）。
+        'pattern': {for (final e in pattern.entries) '${e.key}': e.value},
         if (overrides.isNotEmpty)
           'userOverrides': overrides.map((k, v) => MapEntry(k, {
                 'name': v.name,

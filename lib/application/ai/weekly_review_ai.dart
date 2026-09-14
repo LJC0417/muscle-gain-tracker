@@ -373,6 +373,13 @@ Future<int> _bumpQuota(AppDatabase db, String today) async {
   return next;
 }
 
+/// 只读判断额度是否已用尽（不扣额度）。
+/// 断网 / 超时这类失败不应消耗额度，否则用户出门一天就把额度耗光了。
+Future<bool> _quotaExhausted(AppDatabase db, String today) async {
+  final raw = await _readSetting(db, _quotaKey(today));
+  return (int.tryParse(raw ?? '0') ?? 0) >= CloudConfig.dailyCallLimit;
+}
+
 // ════════════════════════════════════════════════════════════════
 // 入口
 // ════════════════════════════════════════════════════════════════
@@ -415,8 +422,7 @@ Future<AiReviewOutcome> generateAiWeeklyReview({
     }
   }
 
-  final quota = await _bumpQuota(db, today);
-  if (quota < 0) {
+  if (await _quotaExhausted(db, today)) {
     return AiReviewOutcome(
       text: localResult.text,
       fromAi: false,
@@ -481,6 +487,8 @@ Future<AiReviewOutcome> generateAiWeeklyReview({
     if (text.isEmpty) {
       return fallback('AI 返回内容未通过合规校验，显示本地建议');
     }
+    // 调通了才记账（失败不消耗当日额度）
+    await _bumpQuota(db, today);
     await _writeCache(db, localResult.weekStart, text, fromAi: true);
     await saveWeeklyReview(
       db,

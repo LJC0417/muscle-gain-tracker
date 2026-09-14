@@ -147,7 +147,7 @@ Map<String, dynamic> applyAdjustment(
   Map<String, dynamic> goal,
   String thisWeekKey,
 ) {
-  if (suggest == null || goal == null) return goal;
+  if (suggest == null) return goal;
   final next = Map<String, dynamic>.from(goal);
   final nowIso = DateTime.now().toIso8601String();
   if (suggest.type == 'maintain' || suggest.amount == 0) {

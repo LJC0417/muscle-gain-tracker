@@ -50,9 +50,6 @@ class _StatsPageState extends ConsumerState<StatsPage> {
     final goalRow = ref.watch(goalStreamProvider).valueOrNull;
     final today = ref.watch(todayStringProvider);
     final sessionsAsync = ref.watch(allSessionsProvider);
-    final foodLogsAsync = ref.watch(todayFoodLogsProvider);
-    final exercisesAsync = ref.watch(exercisesProvider);
-    final profile = ref.watch(profileStreamProvider).valueOrNull;
 
     final weights = weightsAsync.value ?? const <WeightPointData>[];
     final sorted = [...weights]..sort((a, b) => a.date.compareTo(b.date));
@@ -118,8 +115,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
               children: [
                 Row(children: [
                   Expanded(
-                      child: _kpi(goalRow?.currentWeightKg
-                              ?.toStringAsFixed(1) ??
+                      child: _kpi(goalRow?.currentWeightKg.toStringAsFixed(1) ??
                           '—', '当前体重')),
                   Expanded(
                       child: _kpi(d == null

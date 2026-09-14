@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'application/notification_service.dart';
+import 'application/plan_regen.dart';
 import 'application/providers/app_providers.dart';
 import 'application/providers/database_provider.dart';
 import 'presentation/router/app_router.dart';
@@ -73,35 +74,73 @@ class _Gate extends ConsumerStatefulWidget {
 }
 
 class _GateState extends ConsumerState<_Gate> {
+  /// 引导状态：null = 尚未读到设置，true/false = 已完成/未完成引导。
+  /// 作为 GoRouter 的 refreshListenable 驱动 redirect。
+  final ValueNotifier<bool?> _onboarded = ValueNotifier<bool?>(null);
+  late final GoRouter _router = buildAppRouter(_onboarded);
+
   bool _rescheduled = false;
-  GoRouter? _router;
-  bool? _routerOnboarded;
+  bool _planChecked = false;
+  bool _appShown = false;
+
+  @override
+  void dispose() {
+    _router.dispose();
+    _onboarded.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(appSettingsProvider);
-    return settings.when(
-      data: (s) {
-        if (!_rescheduled) {
-          _rescheduled = true;
-          // 首次拿到设置后，按开关重排 4 类提醒（fire-and-forget）
-          Future<void>(() => NotificationService.instance.reschedule(s));
-        }
-        final onboarded = s['onboardingDone'] == '1';
-        // 只在引导状态切换时重建路由，避免设置变化把用户踢回首页
-        if (_router == null || _routerOnboarded != onboarded) {
-          _router = buildAppRouter(startWithOnboarding: !onboarded);
-          _routerOnboarded = onboarded;
-        }
-        return MaterialApp.router(
-          title: '增肌管理',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.light(),
-          routerConfig: _router,
-        );
-      },
-      loading: () => const _SplashScaffold(),
-      error: (e, _) => const _SplashScaffold(),
+    final s = settings.valueOrNull;
+
+    if (s != null) {
+      _appShown = true;
+      final onboarded = s['onboardingDone'] == '1';
+
+      if (_onboarded.value == null) {
+        // 首帧：此时 _router 还没被创建，没有任何监听者，直接赋值是安全的
+        _onboarded.value = onboarded;
+      } else if (_onboarded.value != onboarded) {
+        // 后续变化一律放到帧后，避免在 build 期间触发 refreshListenable
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _onboarded.value = onboarded;
+        });
+      }
+
+      if (!_rescheduled) {
+        _rescheduled = true;
+        // 首次拿到设置后，按开关重排 4 类提醒（fire-and-forget）
+        Future<void>(() => NotificationService.instance.reschedule(s));
+      }
+
+      // 自愈：老版本因为序列化 bug 没能把训练计划写进库里，
+      // 这里发现「已完成引导但没有计划」就自动补一份。
+      if (onboarded && !_planChecked) {
+        _planChecked = true;
+        Future<void>(() async {
+          try {
+            final db = await ref.read(databaseReadyProvider.future);
+            final fixed = await ensureTrainingPlan(db);
+            if (fixed && mounted) {
+              ref.invalidate(planProvider);
+              ref.invalidate(appSettingsProvider);
+            }
+          } catch (_) {/* 自愈失败不打扰用户 */}
+        });
+      }
+    }
+
+    // 已经展示过主界面后，即使设置短暂回到 loading 也继续展示，
+    // 否则会把用户踢回启动页（这正是「填完信息卡在加载」的另一半原因）。
+    if (!_appShown) return const _SplashScaffold();
+
+    return MaterialApp.router(
+      title: '增肌管理',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light(),
+      routerConfig: _router,
     );
   }
 }

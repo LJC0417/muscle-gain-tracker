@@ -60,12 +60,10 @@ class _RunItem {
 
 class _WorkoutRunPageState extends ConsumerState<WorkoutRunPage> {
   List<_RunItem> _items = [];
-  bool _saved = false;
   bool _saving = false;
   bool _inited = false;
 
   PlanDay? _day;
-  StoredPlan? _plan;
 
   @override
   void initState() {
@@ -81,7 +79,6 @@ class _WorkoutRunPageState extends ConsumerState<WorkoutRunPage> {
     final day = plan.effectiveDay(widget.planCode);
     if (!mounted) return;
     setState(() {
-      _plan = plan;
       _day = day;
       _inited = true;
     });
@@ -229,7 +226,6 @@ class _WorkoutRunPageState extends ConsumerState<WorkoutRunPage> {
         if (hits.isNotEmpty) prHit = true;
       }
 
-      _saved = true;
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

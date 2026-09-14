@@ -10,7 +10,6 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../application/backup_service.dart';
 import '../../application/foods_provider.dart';
@@ -224,7 +223,8 @@ class _MePageState extends ConsumerState<MePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('已清空，即将进入引导')),
       );
-      context.go('/onboarding');
+      // 不在这里 context.go('/onboarding')：写入 onboardingDone=0 后
+      // 启动闸门会重定向过去，手动跳转会被尚未来得及更新的闸门弹回首页。
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -465,8 +465,7 @@ class _MePageState extends ConsumerState<MePage> {
           AppSettingsCompanion.insert(key: 'onboardingDone', value: '0'),
         );
     ref.invalidate(appSettingsProvider);
-    if (!mounted) return;
-    context.go('/onboarding');
+    // 由启动闸门重定向到 /onboarding
   }
 }
 

@@ -8,7 +8,6 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../application/providers/app_providers.dart';
 import '../../application/providers/database_provider.dart';
@@ -37,12 +36,34 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   bool _saving = false;
 
   Future<void> _finish() async {
+    if (_saving) return;
     setState(() => _saving = true);
+    try {
+      await _persist();
+      // 不再手动 context.go('/today')：写入 onboardingDone='1' 后启动闸门会
+      // 自动把路由从 /onboarding 重定向到 /today，避免两套跳转互相打架。
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('保存失败：$e')),
+      );
+    } finally {
+      // 无论成功失败都必须复位，否则按钮会永远停在转圈状态
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _persist() async {
     final db = ref.read(databaseProvider);
     final factor = recommendFactor(daysPerWeek);
 
+    // 覆盖旧资料（「重新引导」场景）——保留体重/饮食/训练历史，只替换档案与目标。
+    // 不做这一步会往表里追加第二行，而 profileStreamProvider 只认第一行。
+    await db.delete(db.profiles).go();
+    await db.delete(db.goals).go();
+
     // 写 Profiles
-    final profileId = await db.into(db.profiles).insert(
+    await db.into(db.profiles).insert(
           ProfilesCompanion.insert(
             sex: sex,
             age: age,
@@ -134,7 +155,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 .toList(),
           }).toList(),
       'pattern': {
-        for (var i = 1; i <= 7; i++) i: plan.pattern.at(i),
+        // jsonEncode 只接受 String 键，这里必须转成字符串
+        for (var i = 1; i <= 7; i++) '$i': plan.pattern.at(i),
       },
     };
 
@@ -152,15 +174,13 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           ),
         );
 
-    if (mounted) {
-      // 触发依赖刷新
-      ref.invalidate(profileStreamProvider);
-      ref.invalidate(goalStreamProvider);
-      ref.invalidate(appSettingsProvider);
-      ref.invalidate(profileProvider);
-      ref.invalidate(goalProvider);
-      context.go('/today');
-    }
+    // 触发依赖刷新（appSettings 变化后启动闸门会把路由切到 /today）
+    ref.invalidate(profileStreamProvider);
+    ref.invalidate(goalStreamProvider);
+    ref.invalidate(appSettingsProvider);
+    ref.invalidate(profileProvider);
+    ref.invalidate(goalProvider);
+    ref.invalidate(planProvider);
   }
 
   @override
@@ -248,6 +268,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               _NumberInput(
                 value: currentKg,
                 suffix: 'kg',
+                min: 30,
+                max: 200,
+                step: 0.5,
+                decimals: 1,
                 onChanged: (v) => currentKg = v.clamp(30, 200),
               ),
               const SizedBox(height: 16),
@@ -257,6 +281,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               _NumberInput(
                 value: targetKg,
                 suffix: 'kg',
+                min: 30,
+                max: 200,
+                step: 0.5,
+                decimals: 1,
                 onChanged: (v) => targetKg = v.clamp(30, 200),
               ),
               const SizedBox(height: 16),
@@ -422,50 +450,97 @@ class _SegPair extends StatelessWidget {
   }
 }
 
+/// 数值输入 + 加减步进器。
+///
+/// 注意：本组件**自己持有当前值**（不再拿 widget.value 做加减）。
+/// 之前用 widget.value ± 1 的写法，配合父组件 onChanged 里没有 setState，
+/// 会导致父级永远不重建、widget.value 恒定不变 —— 加减号点了没反应。
 class _NumberInput extends StatefulWidget {
   final double value;
   final String suffix;
   final ValueChanged<double> onChanged;
+  final double step;
+  final double min;
+  final double max;
+  final int decimals; // 0=整数，1=一位小数
+
   const _NumberInput({
     required this.value,
     required this.suffix,
     required this.onChanged,
+    this.step = 1,
+    this.min = 0,
+    this.max = 1000,
+    this.decimals = 0,
   });
+
   @override
   State<_NumberInput> createState() => _NumberInputState();
 }
 
 class _NumberInputState extends State<_NumberInput> {
+  late double _v;
   late final TextEditingController _ctrl;
+  late final FocusNode _focus;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController(text: _format(widget.value));
-  }
-
-  @override
-  void didUpdateWidget(covariant _NumberInput oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // 仅当外部 value 与本地 _ctrl 文本不一致时才更新（避免光标跳）
-    final want = _format(widget.value);
-    if (_ctrl.text != want && !_ctrl.text.startsWith(_shortFormat(widget.value))) {
-      _ctrl.text = want;
-    }
+    _v = widget.value;
+    _ctrl = TextEditingController(text: _fmt(_v));
+    _focus = FocusNode()..addListener(_onFocusChange);
   }
 
   @override
   void dispose() {
+    _focus.removeListener(_onFocusChange);
+    _focus.dispose();
     _ctrl.dispose();
     super.dispose();
   }
 
-  String _format(double v) {
-    if (v == v.truncateToDouble()) return v.toInt().toString();
-    return v.toStringAsFixed(1);
+  String _fmt(double v) => widget.decimals <= 0
+      ? v.round().toString()
+      : v.toStringAsFixed(widget.decimals);
+
+  void _writeText(String s) {
+    _ctrl.text = s;
+    _ctrl.selection = TextSelection.collapsed(offset: s.length);
   }
 
-  String _shortFormat(double v) => v.toStringAsFixed(1);
+  /// 失焦时把越界/非法输入修正回合法区间。
+  void _onFocusChange() {
+    if (!_focus.hasFocus) _commit(_ctrl.text);
+  }
+
+  void _emit(double v) => widget.onChanged(v);
+
+  /// 加减号：以本地值为基准，夹取到 [min, max]，并同步输入框。
+  void _step(double dir) {
+    final next = (_v + dir * widget.step).clamp(widget.min, widget.max);
+    if (next == _v) {
+      _writeText(_fmt(_v)); // 已到边界：把可能被手输改乱的文本拉回来
+      return;
+    }
+    setState(() => _v = next);
+    _writeText(_fmt(next));
+    _emit(next);
+  }
+
+  /// 提交（失焦 / 回车）：越界则夹取并回写。
+  void _commit(String raw) {
+    final parsed = double.tryParse(raw.trim());
+    if (parsed == null) {
+      setState(() {});
+      _writeText(_fmt(_v));
+      _emit(_v);
+      return;
+    }
+    final clamped = parsed.clamp(widget.min, widget.max).toDouble();
+    setState(() => _v = clamped);
+    if (_fmt(clamped) != raw.trim()) _writeText(_fmt(clamped));
+    _emit(clamped);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -474,7 +549,9 @@ class _NumberInputState extends State<_NumberInput> {
         Expanded(
           child: TextField(
             controller: _ctrl,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            focusNode: _focus,
+            keyboardType:
+                TextInputType.numberWithOptions(decimal: widget.decimals > 0),
             textAlign: TextAlign.center,
             style: const TextStyle(
               fontSize: 22,
@@ -486,19 +563,23 @@ class _NumberInputState extends State<_NumberInput> {
               hintText: '0',
               suffixText: widget.suffix,
             ),
+            // 输入过程中只记录、不改写文本（否则打字会被格式化打断）
             onChanged: (s) {
-              final v = double.tryParse(s);
-              if (v != null) widget.onChanged(v);
+              final v = double.tryParse(s.trim());
+              if (v == null) return;
+              _v = v;
+              _emit(v.clamp(widget.min, widget.max).toDouble());
             },
+            onSubmitted: _commit,
           ),
         ),
         const SizedBox(width: 8),
         IconButton(
-          onPressed: () => widget.onChanged(widget.value - 1),
+          onPressed: () => _step(-1),
           icon: const Icon(Icons.remove),
         ),
         IconButton(
-          onPressed: () => widget.onChanged(widget.value + 1),
+          onPressed: () => _step(1),
           icon: const Icon(Icons.add),
         ),
       ],

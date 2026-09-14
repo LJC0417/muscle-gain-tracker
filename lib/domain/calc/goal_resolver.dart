@@ -161,7 +161,7 @@ WeightLinkResult onWeightLogged(
   Map<String, dynamic> profile,
   Map<String, dynamic> goal,
 ) {
-  if (newKg == null || goal == null) {
+  if (newKg == null) {
     return WeightLinkResult(
       changed: false,
       fields: const [],
