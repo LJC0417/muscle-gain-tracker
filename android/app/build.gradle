@@ -25,7 +25,8 @@ if (flutterVersionName == null) {
 
 android {
     namespace = "com.ljc.muscle_gain_tracker"
-    compileSdk = flutter.compileSdkVersion
+    // sqlite3_flutter_libs 等插件要求 compileSdk 35，高于 Flutter 3.22 模板默认的 34
+    compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

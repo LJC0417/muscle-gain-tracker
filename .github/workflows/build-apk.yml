@@ -65,7 +65,7 @@ jobs:
           awk '/What went wrong/{f=1;next} f&&n<25{print;n++}' /tmp/apk_build.log || true
           {
             grep -E "Duplicate class" /tmp/apk_build.log | head -n 6 | cut -c1-380
-            grep -E "Execution failed for task|Caused by:" /tmp/apk_build.log | tail -n 4 | cut -c1-380
+            grep -E "error:|resource .* not found|Execution failed for task|Caused by:" /tmp/apk_build.log | tail -n 8 | cut -c1-380
           } | awk '!seen[$0]++' > /tmp/errs.txt || true
           cat /tmp/errs.txt
           while IFS= read -r line; do echo "::error::$line"; done < /tmp/errs.txt
