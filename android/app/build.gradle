@@ -38,7 +38,8 @@ android {
         applicationId = "com.ljc.muscle_gain_tracker"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
-        minSdk = flutter.minSdkVersion
+        // 26：Health Connect（health 插件）要求 minSdk 26+
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
@@ -58,13 +59,14 @@ flutter {
 }
 
 // 修复依赖重复类冲突：
-// 1) kotlin-stdlib 1.8+ 已并入 jdk7/jdk8 子库，老插件带入的 1.7.x 子库会与之重复 → 统一锁 1.8.22
+// 1) kotlin-stdlib 1.8+ 已并入 jdk7/jdk8 子库，老插件带入的旧子库会与之重复 → 统一锁 1.9.22
+//    （与 settings.gradle 的 Kotlin 插件 1.9.22 配套；health 13.x 编译目标即 1.9.22）
 // 2) workmanager 等插件带入的 Guava/ListenableFuture 重复
 configurations.all {
     resolutionStrategy {
-        force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
-        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
-        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib:1.9.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22'
         force 'com.google.guava:guava:32.1.1-android'
     }
 }

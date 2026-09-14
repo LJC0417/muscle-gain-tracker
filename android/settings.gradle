@@ -19,7 +19,8 @@ pluginManagement {
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
     id "com.android.application" version "7.3.0" apply false
-    id "org.jetbrains.kotlin.android" version "1.7.10" apply false
+    // 1.9.22：health 13.x 的 Kotlin 代码按 1.9 元数据编译，1.7.x 插件无法编译它
+    id "org.jetbrains.kotlin.android" version "1.9.22" apply false
 }
 
 include ":app"
