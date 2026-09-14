@@ -28,6 +28,9 @@ android {
     // 35：health 的 connect-client 1.1.0-alpha11 要求 compileSdk ≥35
     // （AGP 7.3 的「最高推荐 33」仅是警告，已在 gradle.properties 抑制）
     compileSdk = 35
+    // 34：AGP 7.3 默认用 build-tools 30.0.3 的 aapt2，无法解析 android-35
+    // 的资源表（RES_TABLE_TYPE_TYPE entry offsets overlap）→ 升级 aapt2
+    buildToolsVersion = "34.0.0"
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
