@@ -5,6 +5,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'application/notification_service.dart';
 import 'application/providers/app_providers.dart';
 import 'application/providers/database_provider.dart';
 import 'presentation/router/app_router.dart';
@@ -63,14 +64,26 @@ class _Bootstrap extends ConsumerWidget {
   }
 }
 
-class _Gate extends ConsumerWidget {
+class _Gate extends ConsumerStatefulWidget {
   const _Gate();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Gate> createState() => _GateState();
+}
+
+class _GateState extends ConsumerState<_Gate> {
+  bool _rescheduled = false;
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(appSettingsProvider);
     return settings.when(
       data: (s) {
+        if (!_rescheduled) {
+          _rescheduled = true;
+          // 首次拿到设置后，按开关重排 4 类提醒（fire-and-forget）
+          Future<void>(() => NotificationService.instance.reschedule(s));
+        }
         final onboarded = s['onboardingDone'] == '1';
         final router = buildAppRouter(startWithOnboarding: !onboarded);
         return MaterialApp.router(

@@ -1,17 +1,22 @@
-/// 我的页 P-10（ARCHITECTURE F04）
-///   - 资料卡：性别 / 年龄 / 身高 / 当前→目标体重 / 场景 / 训练频率
-///   - 目标卡：每日热量 + P/C/F
-///   - 「重新生成训练计划」按钮：调 regenerateTrainingPlan
-///   - 「清空所有数据」按钮：wipeAllUserData + 跳 /onboarding
-///   - 底部版本号 + 技术说明
-///
-/// 本期不实现：体重历史 / 营养微调 / 设置开关 / JSON 备份 / 通知开关。
+/// 我的页 P-10（ARCHITECTURE F04 + F05 补全）
+///   - 资料卡 / 目标卡
+///   - 操作卡：重新生成训练计划 / 清空所有数据
+///   - 设置卡：体重单位（kg/斤）、4 类通知开关与时间
+///   - 数据管理卡：JSON 备份导出 / 导入 / 重新引导 / 清空
 library;
 
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:drift/drift.dart' show Value;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../application/backup_service.dart';
+import '../../application/foods_provider.dart';
+import '../../application/notification_service.dart';
 import '../../application/plan_regen.dart';
 import '../../application/providers/app_providers.dart';
 import '../../application/providers/database_provider.dart';
@@ -21,6 +26,7 @@ import '../../data/seed_loader.dart';
 import '../../domain/calc/calc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/mg_widgets.dart';
+import '../widgets/plan_customize_sheet.dart' show customExercisesProvider;
 
 class MePage extends ConsumerStatefulWidget {
   const MePage({super.key});
@@ -67,6 +73,10 @@ class _MePageState extends ConsumerState<MePage> {
               _goalCard(goal, g),
               const SizedBox(height: 12),
               _actionsCard(context),
+              const SizedBox(height: 12),
+              _settingsCard(context),
+              const SizedBox(height: 12),
+              _dataCard(context),
               const SizedBox(height: 12),
               const _AboutCard(),
             ],
@@ -209,17 +219,8 @@ class _MePageState extends ConsumerState<MePage> {
     try {
       final db = ref.read(databaseReadyProvider).requireValue;
       await wipeAllUserData(db);
-      // 触发依赖刷新
-      ref.invalidate(profileStreamProvider);
-      ref.invalidate(profileProvider);
-      ref.invalidate(goalStreamProvider);
-      ref.invalidate(goalProvider);
-      ref.invalidate(planProvider);
-      ref.invalidate(appSettingsProvider);
-      ref.invalidate(todayFoodLogsProvider);
-      ref.invalidate(todayHabitsProvider);
-      ref.invalidate(todayIntakeProvider);
-      ref.invalidate(todayTrainingSessionStreamProvider);
+      await NotificationService.instance.cancelAll();
+      _invalidateAll();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('已清空，即将进入引导')),
@@ -233,6 +234,240 @@ class _MePageState extends ConsumerState<MePage> {
     } finally {
       if (mounted) setState(() => _clearing = false);
     }
+  }
+
+  void _invalidateAll() {
+    ref.invalidate(profileStreamProvider);
+    ref.invalidate(profileProvider);
+    ref.invalidate(goalStreamProvider);
+    ref.invalidate(goalProvider);
+    ref.invalidate(planProvider);
+    ref.invalidate(appSettingsProvider);
+    ref.invalidate(todayFoodLogsProvider);
+    ref.invalidate(todayHabitsProvider);
+    ref.invalidate(todayIntakeProvider);
+    ref.invalidate(todayTrainingSessionStreamProvider);
+    ref.invalidate(weightPointsStreamProvider);
+    ref.invalidate(allSessionsProvider);
+    ref.invalidate(todayWeightProvider);
+    ref.invalidate(weightDeltaProvider);
+    ref.invalidate(foodsProvider);
+    ref.invalidate(customExercisesProvider);
+  }
+
+  // ════════ 设置卡 ════════
+
+  Future<void> _setSetting(String key, String value) async {
+    final db = ref.read(databaseReadyProvider).requireValue;
+    await db.into(db.appSettings).insertOnConflictUpdate(
+          AppSettingsCompanion.insert(key: key, value: value),
+        );
+    ref.invalidate(appSettingsProvider);
+    // 通知相关设置变化 → 重排提醒
+    if (key.startsWith('notify')) {
+      final settings = await ref.read(appSettingsProvider.future);
+      await NotificationService.instance.reschedule(settings);
+    }
+  }
+
+  Widget _settingsCard(BuildContext context) {
+    final settings = ref.watch(appSettingsProvider).valueOrNull ??
+        const <String, String>{};
+    final unit = settings['weightUnit'] ?? AppConfig.weightUnit;
+    return MgCard(
+      title: '设置',
+      child: Column(
+        children: [
+          _switchRow('体重单位（kg / 斤）', unit == 'jin', (on) async {
+            await _setSetting('weightUnit', on ? 'jin' : 'kg');
+          }),
+          _switchRow('体重提醒', settings['notifyWeightEnabled'] == '1',
+              (on) async {
+            await _setSetting('notifyWeightEnabled', on ? '1' : '0');
+          }),
+          _timeRow('体重提醒时间', settings['notifyWeightTime'],
+              (t) => _setSetting('notifyWeightTime', t)),
+          _switchRow('训练提醒', settings['notifyWorkoutEnabled'] == '1',
+              (on) async {
+            await _setSetting('notifyWorkoutEnabled', on ? '1' : '0');
+          }),
+          _timeRow('训练提醒时间', settings['notifyWorkoutTime'],
+              (t) => _setSetting('notifyWorkoutTime', t)),
+          _switchRow(
+              '喝水提醒（10:00–21:00 每 2 小时）',
+              settings['notifyWaterEnabled'] == '1', (on) async {
+            await _setSetting('notifyWaterEnabled', on ? '1' : '0');
+          }),
+          _switchRow('每周复盘提醒（周日 20:00）',
+              settings['notifyReviewEnabled'] == '1', (on) async {
+            await _setSetting('notifyReviewEnabled', on ? '1' : '0');
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _switchRow(String label, bool value, ValueChanged<bool> onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
+          Switch(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+
+  Widget _timeRow(
+      String label, String? current, ValueChanged<String> onPick) {
+    final display = (current == null || current.isEmpty)
+        ? AppConfig.notifyWeightTime
+        : current;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text('$label（$display）',
+                style: const TextStyle(fontSize: 14)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final parts = display.split(':');
+              final initial = TimeOfDay(
+                hour: int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 8,
+                minute: int.tryParse(parts.length > 1 ? parts[1] : '') ?? 0,
+              );
+              final t = await showTimePicker(
+                context: context,
+                initialTime: initial,
+              );
+              if (t != null) {
+                onPick('${t.hour.toString().padLeft(2, '0')}:'
+                    '${t.minute.toString().padLeft(2, '0')}');
+              }
+            },
+            child: const Text('修改'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ════════ 数据管理卡 ════════
+
+  Widget _dataCard(BuildContext context) {
+    return MgCard(
+      title: '数据管理',
+      child: Column(
+        children: [
+          _dataRow(
+            '导出备份',
+            '生成 JSON 并分享到微信/网盘等',
+            '导出',
+            _export,
+          ),
+          _dataRow(
+            '导入备份',
+            '从本地 JSON 文件恢复',
+            '导入',
+            _import,
+          ),
+          _dataRow(
+            '重新引导',
+            '重走一遍设置流程并覆盖当前资料',
+            '重新',
+            _reOnboard,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dataRow(
+      String label, String sub, String btnText, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text(sub,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppPalette.textSub)),
+              ],
+            ),
+          ),
+          OutlinedButton(onPressed: onTap, child: Text(btnText)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _export() async {
+    final db = ref.read(databaseReadyProvider).requireValue;
+    final ok = await exportBackup(db);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? '已生成备份，请选择分享方式' : '导出失败')),
+    );
+  }
+
+  Future<void> _import() async {
+    try {
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      final path = res?.files.single.path;
+      if (path == null) return;
+      final content = await File(path).readAsString();
+      final db = ref.read(databaseReadyProvider).requireValue;
+      final msg = await importBackup(db, content);
+      _invalidateAll();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已导入备份 · $msg')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导入失败：$e')),
+      );
+    }
+  }
+
+  Future<void> _reOnboard() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重新引导？'),
+        content: const Text('将重走设置流程并覆盖当前资料。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('继续')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final db = ref.read(databaseReadyProvider).requireValue;
+    await db.into(db.appSettings).insertOnConflictUpdate(
+          AppSettingsCompanion.insert(key: 'onboardingDone', value: '0'),
+        );
+    ref.invalidate(appSettingsProvider);
+    if (!mounted) return;
+    context.go('/onboarding');
   }
 }
 

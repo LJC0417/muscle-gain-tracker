@@ -1,6 +1,6 @@
 /// 应用底部 Tab 容器（ARCHITECTURE F03）
-/// 4 个 tab：今日 / 训练 / 饮食 / 我的
-/// 选中时高亮（primary 橙）；未选中灰色 + 子小字。
+/// 5 个 tab：今日 / 训练 / 饮食 / 数据 / 我的
+/// 选中时高亮（primary 橙）；未选中灰色。
 library;
 
 import 'package:flutter/material.dart';
@@ -40,6 +40,11 @@ class AppScaffold extends StatelessWidget {
             icon: Icon(Icons.restaurant_outlined),
             selectedIcon: Icon(Icons.restaurant, color: Color(0xFFFF7A30)),
             label: '饮食',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.insights_outlined),
+            selectedIcon: Icon(Icons.insights, color: Color(0xFFFF7A30)),
+            label: '数据',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),

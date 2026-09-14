@@ -1,19 +1,26 @@
-/// 今日页 P-01（ARCHITECTURE F04）
-///   - 顶栏：日期
+/// 今日页 P-01（ARCHITECTURE F04 + F05 补全）
+///   - 顶栏：日期 + 连续记录 streak
 ///   - 热量卡：圆环 + P/C/F 三段
-///   - 今日训练卡
+///   - 体重卡：点按弹记录弹层（P-11）
+///   - 今日训练卡：开始训练 → 执行页
 ///   - 今日打卡卡：喝水进度 / 睡眠 stepper
+///   - FAB 四项：记体重 / 加餐 / 开始训练 / 打卡
 library;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../application/history_providers.dart';
 import '../../application/providers/app_providers.dart';
 import '../../application/providers/database_provider.dart';
 import '../../core/constants/app_config.dart';
 import '../../data/database.dart';
+import '../../domain/calc/calc.dart';
 import '../theme/app_theme.dart';
+import '../widgets/food_picker_sheet.dart';
 import '../widgets/mg_widgets.dart';
+import '../widgets/weight_sheet.dart';
 
 class TodayPage extends ConsumerWidget {
   const TodayPage({super.key});
@@ -28,13 +35,18 @@ class TodayPage extends ConsumerWidget {
     final today = ref.watch(todayStringProvider);
     final todayDay = _todayPlanInfo(plan, today);
     final exercisesAsync = ref.watch(exercisesProvider);
+    final weightsAsync = ref.watch(weightPointsStreamProvider);
+    final streakN = streak(
+      (weightsAsync.value ?? const <WeightPointData>[]).map((w) => w.date),
+      today,
+    );
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('今日'),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.only(right: 8),
             child: Center(
               child: Text(
                 _formatDate(today),
@@ -45,18 +57,62 @@ class TodayPage extends ConsumerWidget {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppPalette.primaryWeak,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.local_fire_department,
+                        size: 14, color: AppPalette.primaryDark),
+                    const SizedBox(width: 2),
+                    Text(
+                      '$streakN',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppPalette.primaryDark,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
+      ),
+      floatingActionButton: _FabMenu(
+        onWeight: () => showWeightSheet(context),
+        onFood: () => showFoodPickerSheet(context, initialMeal: 'snack'),
+        onTrain: () => _startTodayRun(context, plan, today),
+        onHabit: () => _openHabitSheet(
+          context,
+          ref,
+          ref.read(todayHabitsProvider).valueOrNull,
+        ),
       ),
       body: RefreshIndicator(
         onRefresh: () async {
           ref.invalidate(todayFoodLogsProvider);
           ref.invalidate(todayHabitsProvider);
           ref.invalidate(exercisesProvider);
+          ref.invalidate(weightPointsStreamProvider);
+          ref.invalidate(todayWeightProvider);
+          ref.invalidate(weightDeltaProvider);
+          ref.invalidate(allSessionsProvider);
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             _kcalCard(goal, intake),
+            const SizedBox(height: 12),
+            _weightCard(context, ref),
             const SizedBox(height: 12),
             _trainCard(context, todayDay, exercisesAsync),
             const SizedBox(height: 12),
@@ -153,6 +209,183 @@ class _PlanLite {
   });
 }
 
+/// 体重卡（P-11）：点按弹记录弹层；badge 显示相对上一次的变化。
+Widget _weightCard(BuildContext context, WidgetRef ref) {
+  final todayWeight = ref.watch(todayWeightProvider).valueOrNull;
+  final delta = ref.watch(weightDeltaProvider).valueOrNull;
+  final goalRow = ref.watch(goalStreamProvider).valueOrNull;
+  final unit = 'kg';
+  final curW = todayWeight?.kg ?? goalRow?.currentWeightKg ?? 0.0;
+  final hasRecord = todayWeight != null;
+
+  final Widget badge;
+  if (delta == null) {
+    badge = const MgBadge(
+        text: '首次', bg: AppPalette.surfaceMuted, fg: AppPalette.textSub);
+  } else if (delta > 0) {
+    badge = const MgBadge(
+        text: '↑', bg: Color(0xFFFEF3C7), fg: Color(0xFF92400E));
+  } else if (delta < 0) {
+    badge = const MgBadge(
+        text: '↓', bg: Color(0xFFE7F8EE), fg: Color(0xFF177F45));
+  } else {
+    badge = const MgBadge(
+        text: '持平', bg: AppPalette.surfaceMuted, fg: AppPalette.textSub);
+  }
+
+  return MgCard(
+    title: '今日体重',
+    onTap: () => showWeightSheet(context),
+    right: Row(mainAxisSize: MainAxisSize.min, children: [
+      if (delta != null)
+        Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: badge,
+        ),
+      const Icon(Icons.chevron_right, size: 18, color: AppPalette.textWeak),
+    ]),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text(
+          curW.toStringAsFixed(1),
+          style: const TextStyle(
+            fontSize: 34,
+            fontWeight: FontWeight.w700,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          unit,
+          style: const TextStyle(fontSize: 14, color: AppPalette.textSub),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          hasRecord ? '今日已记录 · 点按修改' : '今日未记录 · 点按记录',
+          style: const TextStyle(fontSize: 13, color: AppPalette.textSub),
+        ),
+      ],
+    ),
+  );
+}
+
+/// FAB 四项（记体重 / 加餐 / 开始训练 / 打卡）。
+class _FabMenu extends StatefulWidget {
+  final VoidCallback onWeight;
+  final VoidCallback onFood;
+  final VoidCallback onTrain;
+  final VoidCallback onHabit;
+  const _FabMenu({
+    required this.onWeight,
+    required this.onFood,
+    required this.onTrain,
+    required this.onHabit,
+  });
+
+  @override
+  State<_FabMenu> createState() => _FabMenuState();
+}
+
+class _FabMenuState extends State<_FabMenu>
+    with SingleTickerProviderStateMixin {
+  bool _open = false;
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _open = !_open);
+    _open ? _ctrl.forward() : _ctrl.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // 展开项（自下而上）
+        ScaleTransition(
+          scale: CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
+          child: _open
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _fabItem(Icons.monitor_weight_outlined, '记体重',
+                        widget.onWeight),
+                    _fabItem(Icons.fastfood_outlined, '加餐', widget.onFood),
+                    _fabItem(Icons.play_circle_outline, '开始训练',
+                        widget.onTrain),
+                    _fabItem(Icons.check_circle_outline, '打卡',
+                        widget.onHabit),
+                  ],
+                )
+              : const SizedBox.shrink(),
+        ),
+        const SizedBox(height: 12),
+        FloatingActionButton(
+          backgroundColor: AppPalette.primary,
+          foregroundColor: Colors.white,
+          onPressed: _toggle,
+          child: AnimatedRotation(
+            turns: _open ? 0.125 : 0,
+            duration: const Duration(milliseconds: 180),
+            child: const Icon(Icons.add),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _fabItem(IconData icon, String label, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: AppPalette.surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppPalette.border),
+            ),
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 13, color: AppPalette.text)),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: FloatingActionButton(
+              heroTag: 'fab_$label',
+              backgroundColor: AppPalette.surface,
+              foregroundColor: AppPalette.primaryDark,
+              elevation: 1,
+              onPressed: () {
+                _toggle();
+                onTap();
+              },
+              child: Icon(icon, size: 20),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PlanEntryLite {
   final int sortOrder;
   final String exerciseId;
@@ -169,27 +402,36 @@ _PlanLite? _todayPlanInfo(StoredPlan plan, String today) {
   final wd = _weekday1to7(today);
   final code = plan.pattern[wd];
   if (code == null || code.isEmpty) return null;
-  for (final d in plan.days) {
-    if (d.code == code) {
-      return _PlanLite(
-        code: d.code,
-        name: d.name,
-        estMinutes: d.estMinutes,
-        entries: d.entries
-            .map((e) => _PlanEntryLite(
-                sortOrder: e.sortOrder,
-                exerciseId: e.exerciseId,
-                targetSets: e.targetSets))
-            .toList(),
-      );
-    }
-  }
-  return null;
+  final day = plan.effectiveDay(code);
+  if (day == null) return null;
+  return _PlanLite(
+    code: day.code,
+    name: day.name,
+    estMinutes: day.estMinutes,
+    entries: day.entries
+        .map((e) => _PlanEntryLite(
+            sortOrder: e.sortOrder,
+            exerciseId: e.exerciseId,
+            targetSets: e.targetSets))
+        .toList(),
+  );
 }
 
 int _weekday1to7(String iso) {
   final d = DateTime.parse(iso);
   return ((d.weekday + 6) % 7) + 1;
+}
+
+/// 开始今日训练（FAB 与训练卡共用）：休息日提示，否则进执行页。
+void _startTodayRun(BuildContext context, StoredPlan plan, String today) {
+  final info = _todayPlanInfo(plan, today);
+  if (info == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('今天休息日，好好恢复')),
+    );
+    return;
+  }
+  context.go('/workout-run/${Uri.encodeComponent(info.code)}');
 }
 
 Widget _trainCard(
@@ -204,11 +446,8 @@ Widget _trainCard(
         : _TrainingDayBody(
             plan: todayDay,
             exercisesAsync: exercisesAsync,
-            onStart: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('本迭代未包含训练执行')),
-              );
-            },
+            onStart: () =>
+                context.go('/workout-run/${Uri.encodeComponent(todayDay.code)}'),
           ),
   );
 }

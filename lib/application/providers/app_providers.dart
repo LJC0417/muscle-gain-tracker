@@ -254,15 +254,50 @@ final resolvedGoalProvider = Provider<ResolvedGoalView>((ref) {
 //  派生：plan（从 AppSettings.key='plan' 的 JSON 反序列化）
 // ════════════════════════════════════════════════════════════════════
 
+/// 自定义训练日覆盖（对应 prototype plan.userOverrides[code]）。
+class PlanOverride {
+  final String name;
+  final List<PlanEntry> entries;
+  const PlanOverride({required this.name, required this.entries});
+
+  PlanDay toDay(String code) => PlanDay(
+        code: code,
+        name: name,
+        entries: entries,
+        estMinutes: 0,
+      );
+}
+
 /// 单日 plan + 周排期（与 plan_generation.dart 中的 PlanDay 一致）。
 class StoredPlan {
   final List<PlanDay> days;
   final Map<int, String> pattern; // 1..7 → code
-  const StoredPlan({required this.days, required this.pattern});
+  final Map<String, PlanOverride> overrides; // code → 用户自定义
+  const StoredPlan({
+    required this.days,
+    required this.pattern,
+    this.overrides = const {},
+  });
 
   static const empty = StoredPlan(days: [], pattern: {});
 
   bool get isEmpty => days.isEmpty;
+
+  PlanDay? defaultDay(String code) {
+    for (final d in days) {
+      if (d.code == code) return d;
+    }
+    return null;
+  }
+
+  /// 用户视角的某训练日：有覆盖用覆盖，否则默认。
+  PlanDay? effectiveDay(String code) {
+    final ov = overrides[code];
+    if (ov != null) return ov.toDay(code);
+    return defaultDay(code);
+  }
+
+  bool isCustom(String code) => overrides.containsKey(code);
 
   /// 对齐 prototype 行为：plan.days 为空时也算「未生成」。
   factory StoredPlan.fromAppSettingsValue(String? raw) {
@@ -295,7 +330,31 @@ class StoredPlan {
       final pattern = <int, String>{};
       ((m['pattern'] as Map<dynamic, dynamic>?) ?? const {})
           .forEach((k, v) => pattern[(k as num).toInt()] = v as String);
-      return StoredPlan(days: days, pattern: pattern);
+      final overrides = <String, PlanOverride>{};
+      ((m['userOverrides'] as Map<dynamic, dynamic>?) ?? const {})
+          .forEach((k, v) {
+        final om = Map<String, dynamic>.from(v as Map);
+        final entries = <PlanEntry>[];
+        for (final e in (om['entries'] as List<dynamic>? ?? const [])) {
+          final em = Map<String, dynamic>.from(e as Map);
+          entries.add(PlanEntry(
+            sortOrder: (em['sortOrder'] as num).toInt(),
+            exerciseId: em['exerciseId'] as String,
+            targetSets: (em['targetSets'] as num).toInt(),
+            repLow: em['repLow'] as num,
+            repHigh: em['repHigh'] as num,
+          ));
+        }
+        overrides[k as String] = PlanOverride(
+          name: (om['name'] as String?) ?? k,
+          entries: entries,
+        );
+      });
+      return StoredPlan(
+        days: days,
+        pattern: pattern,
+        overrides: overrides,
+      );
     } catch (_) {
       return empty;
     }
@@ -319,6 +378,19 @@ class StoredPlan {
           };
         }).toList(),
         'pattern': pattern,
+        if (overrides.isNotEmpty)
+          'userOverrides': overrides.map((k, v) => MapEntry(k, {
+                'name': v.name,
+                'entries': v.entries
+                    .map((e) => {
+                          'sortOrder': e.sortOrder,
+                          'exerciseId': e.exerciseId,
+                          'targetSets': e.targetSets,
+                          'repLow': e.repLow,
+                          'repHigh': e.repHigh,
+                        })
+                    .toList(),
+              })),
       };
 
   /// 适配 generatePlan/getTodayPlan 的 PlanOutput（一次性转换）。
@@ -340,3 +412,14 @@ final planProvider = Provider<StoredPlan>((ref) {
       );
   return StoredPlan.fromAppSettingsValue(settings['plan']);
 });
+
+/// 把 plan（含 userOverrides）写回 AppSettings['plan']。
+/// 调用后由 UI 层 invalidate(planProvider/appSettingsProvider) 刷新。
+Future<void> saveStoredPlan(AppDatabase db, StoredPlan plan) async {
+  await db.into(db.appSettings).insertOnConflictUpdate(
+        AppSettingsCompanion.insert(
+          key: 'plan',
+          value: jsonEncode(plan.toJson()),
+        ),
+      );
+}

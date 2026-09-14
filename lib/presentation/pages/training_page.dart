@@ -1,16 +1,14 @@
 /// 训练页 P-04（ARCHITECTURE F04）
 ///   - 顶部周排期（周一~周日 7 个圆点，今日高亮，点选切换）
-///   - 训练日详情卡：前 3 个动作 + 总数 + 预计分钟数 + 三态按钮
-///   - 「自定义内容」disable + toast
-///   - 本周训练进度条
-///
-/// 本期不实现：实际训练执行、自定义训练日 picker、自定义动作。
-/// 所有对应按钮统一 SnackBar「本迭代未包含训练执行」。
+///   - 训练日详情卡：动作列表 + 三态按钮 + 自定义内容
+///   - 「开始训练」→ /workout-run 执行页（记录每组重量×次数 + PR 判定）
+///   - 「自定义内容」→ 自定义训练日弹层
 library;
 
 import 'package:flutter/material.dart';
 import 'package:drift/drift.dart' hide Column, Table;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../application/providers/app_providers.dart';
 import '../../application/providers/database_provider.dart';
@@ -18,6 +16,7 @@ import '../../data/database.dart';
 import '../../domain/plan/plan.dart';
 import '../theme/app_theme.dart';
 import '../widgets/mg_widgets.dart';
+import '../widgets/plan_customize_sheet.dart';
 
 class TrainingPage extends ConsumerStatefulWidget {
   const TrainingPage({super.key});
@@ -84,8 +83,8 @@ class _TrainingPageState extends ConsumerState<TrainingPage> {
               todayCode: todayCode,
               exercisesAsync: exercisesAsync,
               sessionAsync: sessionAsync,
-              onAction: _blockedSnack,
-              onCustomize: _blockedSnack,
+              onStart: () => _startRun(selCode),
+              onCustomize: () => _openCustomize(selCode),
             ),
             const SizedBox(height: 12),
             const _WeeklyProgressCard(),
@@ -95,10 +94,22 @@ class _TrainingPageState extends ConsumerState<TrainingPage> {
     );
   }
 
-  void _blockedSnack() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('本迭代未包含训练执行')),
+  void _startRun(String code) {
+    context.go('/workout-run/${Uri.encodeComponent(code)}');
+  }
+
+  Future<void> _openCustomize(String code) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppPalette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => PlanCustomizeSheet(planCode: code),
     );
+    ref.invalidate(planProvider);
+    ref.invalidate(appSettingsProvider);
   }
 }
 
@@ -208,7 +219,7 @@ class _DayDetailCard extends StatelessWidget {
   final String todayCode;
   final AsyncValue<List<ExerciseData>> exercisesAsync;
   final AsyncValue<TrainingSessionData?> sessionAsync;
-  final VoidCallback onAction;
+  final VoidCallback onStart;
   final VoidCallback onCustomize;
 
   const _DayDetailCard({
@@ -217,13 +228,14 @@ class _DayDetailCard extends StatelessWidget {
     required this.todayCode,
     required this.exercisesAsync,
     required this.sessionAsync,
-    required this.onAction,
+    required this.onStart,
     required this.onCustomize,
   });
 
   @override
   Widget build(BuildContext context) {
-    final day = plan.days.where((d) => d.code == selCode).firstOrNull;
+    final day = plan.effectiveDay(selCode);
+    final isCustom = plan.isCustom(selCode);
 
     if (day == null) {
       return const MgCard(
@@ -278,6 +290,12 @@ class _DayDetailCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
+                        if (isCustom)
+                          const MgBadge(
+                            text: '自定义',
+                            bg: AppPalette.primaryWeak,
+                            fg: AppPalette.primaryDark,
+                          ),
                         if (isTodayDone)
                           const MgBadge(
                             text: '已完成',
@@ -299,7 +317,7 @@ class _DayDetailCard extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               FilledButton(
-                onPressed: btnDisabled ? null : onAction,
+                onPressed: btnDisabled ? null : onStart,
                 child: Text(btnLabel),
               ),
             ],
@@ -324,7 +342,7 @@ class _DayDetailCard extends StatelessWidget {
     return async.when(
       data: (all) {
         final map = {for (final e in all) e.id: e};
-        final show = day.entries.take(3).toList();
+        final show = day.entries.toList();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -341,29 +359,19 @@ class _DayDetailCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        map[en.exerciseId]?.name ?? en.exerciseId,
+                        '${map[en.exerciseId]?.name ?? en.exerciseId}'
+                        '${map[en.exerciseId]?.isCompound == true ? ' · 复合' : ''}',
                         style: const TextStyle(fontSize: 14),
                       ),
                     ),
                     Text(
-                      '${en.targetSets} 组',
+                      '${en.targetSets} 组 × ${en.repLow}–${en.repHigh} 次',
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppPalette.textSub,
                       ),
                     ),
                   ],
-                ),
-              ),
-            if (day.entries.length > 3)
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: Text(
-                  '…等更多动作',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppPalette.textWeak,
-                  ),
                 ),
               ),
           ],

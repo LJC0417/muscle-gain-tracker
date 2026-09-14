@@ -1,20 +1,23 @@
-/// 饮食页 P-02（ARCHITECTURE F04）
-///   - 顶部今日总览（kcal + P/C/F 四段）
-///   - 4 个餐别 tab（早/午/晚/加）+ 每餐已记录食物 + 添加按钮（本迭代未包含）
-///   - 「一键清空今日食物」按钮：AlertDialog 确认
-///
-/// 本期不实现：食物选择器、推荐食物清单、餐别命名编辑。
-/// 所有「添加」按钮统一 SnackBar「本迭代未包含食物选择器」。
+/// 饮食页 P-02/P-03（ARCHITECTURE F04 + F05 补全）
+///   - 顶部今日总览（kcal + P/C/F 四段）+ 一键清空
+///   - 4 个餐别 tab + 添加（食物选择器弹层：搜索/分类/餐别切换/撤销）
+///   - 餐别命名编辑（AppSettings['mealNames']）
+///   - 推荐食物清单（按蛋白优先排序，快速加入第 4 餐）
 library;
 
+import 'dart:convert';
+
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../application/foods_provider.dart';
 import '../../application/providers/app_providers.dart';
 import '../../application/providers/database_provider.dart';
 import '../../core/constants/app_config.dart';
 import '../../data/database.dart';
 import '../theme/app_theme.dart';
+import '../widgets/food_picker_sheet.dart';
 import '../widgets/mg_widgets.dart';
 
 class DietPage extends ConsumerStatefulWidget {
@@ -46,6 +49,7 @@ class _DietPageState extends ConsumerState<DietPage>
     final goal = ref.watch(resolvedGoalProvider);
     final today = ref.watch(todayStringProvider);
     final logsAsync = ref.watch(todayFoodLogsProvider);
+    final mealNames = ref.watch(mealNamesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -75,13 +79,13 @@ class _DietPageState extends ConsumerState<DietPage>
               const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           tabs: [
             for (final m in AppConfig.mealSlot)
-              Tab(text: AppConfig.labels[m] ?? m),
+              Tab(text: mealNames[m] ?? (AppConfig.labels[m] ?? m)),
           ],
         ),
       ),
       body: Column(
         children: [
-          _overviewCard(intake, goal),
+          _overviewCard(context, ref, intake, goal, logsAsync),
           Expanded(
             child: TabBarView(
               controller: _tab,
@@ -90,20 +94,173 @@ class _DietPageState extends ConsumerState<DietPage>
                   _MealTab(
                     meal: m,
                     logsAsync: logsAsync,
-                    onAdd: _blockedAddSnack,
-                    onClearAll: _blockedAddSnack,
+                    mealName: mealNames[m] ?? (AppConfig.labels[m] ?? m),
                   ),
               ],
             ),
           ),
+          _recommendCard(),
+          const SizedBox(height: 8),
         ],
       ),
     );
   }
 
-  void _blockedAddSnack() {
+  /// 推荐食物清单（按蛋白优先排序，快速加入第 4 餐）。
+  Widget _recommendCard() {
+    final foodsAsync = ref.watch(foodsProvider);
+    final mealNames = ref.watch(mealNamesProvider);
+    final all = foodsAsync.value ?? const <FoodLite>[];
+    final rec = all
+        .where((f) => f.category == 'meat')
+        .toList()
+      ..sort((a, b) => b.p.compareTo(a.p));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: MgCard(
+        title: '推荐食物清单',
+        sub: '按蛋白优先排序 · 点 ＋ 快速加入${mealNames['snack'] ?? '加餐'}',
+        right: TextButton.icon(
+          onPressed: _editMealNames,
+          icon: const Icon(Icons.edit_outlined, size: 14),
+          label: const Text('编辑命名', style: TextStyle(fontSize: 12)),
+        ),
+        child: Column(
+          children: [
+            for (final f in rec.take(6))
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(f.name,
+                              style: const TextStyle(fontSize: 14)),
+                          Text(
+                            '${f.kcal.toInt()} kcal · '
+                            '${f.p.toInt()}P/${f.c.toInt()}C/${f.f.toInt()}F',
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: AppPalette.textSub),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      width: 36,
+                      height: 32,
+                      child: IconButton.outlined(
+                        padding: EdgeInsets.zero,
+                        iconSize: 16,
+                        onPressed: () => _quickAdd(f),
+                        icon: const Icon(Icons.add,
+                            color: AppPalette.primary),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _quickAdd(FoodLite f) async {
+    final db = ref.read(databaseReadyProvider);
+    final today = ref.read(todayStringProvider);
+    await db.into(db.foodLogs).insert(FoodLogsCompanion.insert(
+          id: 'fl_${DateTime.now().millisecondsSinceEpoch}',
+          date: today,
+          meal: 'snack',
+          foodId: f.id,
+          foodName: f.name,
+          grams: Value(f.servingGrams),
+          kcal: Value(f.kcal),
+          p: Value(f.p),
+          c: Value(f.c),
+          f: Value(f.f),
+          isEstimate: Value(f.isEstimate),
+          createdAt: Value(DateTime.now()),
+        ));
+    ref.invalidate(todayFoodLogsProvider);
+    if (!mounted) return;
+    final mealLabel = ref.read(mealNamesProvider)['snack'] ?? '加餐';
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('本迭代未包含食物选择器')),
+      SnackBar(content: Text('已加入$mealLabel · ${f.name} ${f.kcal.toInt()} kcal')),
+    );
+  }
+
+  /// 餐别命名编辑弹层。
+  Future<void> _editMealNames() async {
+    final db = ref.read(databaseReadyProvider);
+    final current = ref.read(mealNamesProvider);
+    final ctrls = {
+      for (final k in AppConfig.mealSlot)
+        k: TextEditingController(text: current[k] ?? k),
+    };
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppPalette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Padding(
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: StatefulBuilder(
+          builder: (ctx, setSheet) => ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+            children: [
+              const Text('自定义餐别名称',
+                  style:
+                      TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              const Text(
+                '把 4 个餐别改成你习惯的叫法，比如「上午加餐」「练后餐」等。',
+                style: TextStyle(fontSize: 13, color: AppPalette.textSub),
+              ),
+              const SizedBox(height: 12),
+              for (var i = 0; i < AppConfig.mealSlot.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: TextField(
+                    controller: ctrls[AppConfig.mealSlot[i]],
+                    decoration: InputDecoration(
+                      labelText: '第 ${i + 1} 餐',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('保存'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (saved != true) return;
+    final names = {
+      for (final k in AppConfig.mealSlot) k: ctrls[k]!.text.trim(),
+    };
+    await db.into(db.appSettings).insertOnConflictUpdate(
+          AppSettingsCompanion.insert(
+            key: 'mealNames',
+            value: jsonEncode(names),
+          ),
+        );
+    ref.invalidate(appSettingsProvider);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已保存餐别命名')),
     );
   }
 }
@@ -112,8 +269,16 @@ class _DietPageState extends ConsumerState<DietPage>
 // 总览卡
 // ════════════════════════════════════════════════════════════════════
 
-Widget _overviewCard(TodayIntake intake, ResolvedGoalView goal) {
+Widget _overviewCard(
+  BuildContext context,
+  WidgetRef ref,
+  TodayIntake intake,
+  ResolvedGoalView goal,
+  AsyncValue<List<FoodLogData>> logsAsync,
+) {
   final remain = goal.kcal - intake.kcal;
+  final logCount =
+      (logsAsync.value ?? const <FoodLogData>[]).length;
   return Padding(
     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
     child: MgCard(
@@ -121,17 +286,13 @@ Widget _overviewCard(TodayIntake intake, ResolvedGoalView goal) {
       sub: remain > 0
           ? '剩余可吃 ${remain.toInt()} kcal'
           : '已超 ${(-remain).toInt()} kcal',
-      right: intake.kcal >= goal.kcal
-          ? const MgBadge(
-              text: '已达标',
-              bg: Color(0xFFE7F8EE),
-              fg: Color(0xFF177F45),
-            )
-          : const MgBadge(
-              text: '进行中',
-              bg: AppPalette.surfaceMuted,
-              fg: AppPalette.textSub,
-            ),
+      right: TextButton.icon(
+        onPressed: () => _clearTodayFood(context, ref),
+        icon: const Icon(Icons.delete_sweep_outlined,
+            size: 16, color: AppPalette.danger),
+        label: const Text('一键清空',
+            style: TextStyle(fontSize: 12, color: AppPalette.danger)),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
@@ -153,6 +314,43 @@ Widget _overviewCard(TodayIntake intake, ResolvedGoalView goal) {
         ),
       ),
     ),
+  );
+}
+
+/// 一键清空今日所有饮食（确认后删除）。
+Future<void> _clearTodayFood(BuildContext context, WidgetRef ref) async {
+  final logs = ref.read(todayFoodLogsProvider).valueOrNull ?? const [];
+  if (logs.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('今天还没有饮食记录')),
+    );
+    return;
+  }
+  final res = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('清空今日所有饮食记录？'),
+      content: const Text('将删除今天的所有餐别记录，此操作不可撤销。'),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppPalette.danger),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('一键清空'),
+        ),
+      ],
+    ),
+  );
+  if (res != true) return;
+  final db = ref.read(databaseReadyProvider);
+  final today = ref.read(todayStringProvider);
+  await (db.delete(db.foodLogs)..where((t) => t.date.equals(today))).go();
+  ref.invalidate(todayFoodLogsProvider);
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('已清空今日 ${logs.length} 条饮食记录')),
   );
 }
 
@@ -187,21 +385,17 @@ Widget _kpi(String v, String l) {
 
 class _MealTab extends ConsumerWidget {
   final String meal;
+  final String mealName;
   final AsyncValue<List<FoodLogData>> logsAsync;
-  final VoidCallback onAdd;
-  final VoidCallback onClearAll;
 
   const _MealTab({
     required this.meal,
+    required this.mealName,
     required this.logsAsync,
-    required this.onAdd,
-    required this.onClearAll,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final label = AppConfig.labels[meal] ?? meal;
-
     return logsAsync.when(
       data: (all) {
         final logs = all.where((l) => l.meal == meal).toList();
@@ -209,7 +403,7 @@ class _MealTab extends ConsumerWidget {
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: [
-            _mealHeader(label, logs.length, sum, onAdd),
+            _mealHeader(context, logs.length, sum),
             const SizedBox(height: 8),
             if (logs.isEmpty)
               const Padding(
@@ -226,17 +420,6 @@ class _MealTab extends ConsumerWidget {
               )
             else
               for (final l in logs) _mealRow(context, ref, l),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: onClearAll,
-              icon: const Icon(Icons.cleaning_services_outlined, size: 18),
-              label: const Text('清空今日食物'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(44),
-                foregroundColor: AppPalette.danger,
-                side: const BorderSide(color: Color(0xFFFEE2E2)),
-              ),
-            ),
           ],
         );
       },
@@ -252,7 +435,7 @@ class _MealTab extends ConsumerWidget {
     );
   }
 
-  Widget _mealHeader(String label, int count, double sumKcal, VoidCallback onAdd) {
+  Widget _mealHeader(BuildContext context, int count, double sumKcal) {
     return Row(
       children: [
         Expanded(
@@ -260,7 +443,7 @@ class _MealTab extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                label,
+                mealName,
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
@@ -278,7 +461,8 @@ class _MealTab extends ConsumerWidget {
           ),
         ),
         FilledButton.tonalIcon(
-          onPressed: onAdd,
+          onPressed: () =>
+              showFoodPickerSheet(context, initialMeal: meal),
           icon: const Icon(Icons.add, size: 18),
           label: const Text('添加'),
         ),
