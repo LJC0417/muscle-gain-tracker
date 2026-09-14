@@ -331,8 +331,14 @@ class StoredPlan {
         ));
       }
       final pattern = <int, String>{};
+      // 写入端统一是 String 键（'1'..'7'，jsonEncode 的硬性要求），
+      // 但历史版本写过 int 键，这里两种都要能解析。
+      // 曾因写死 `k as num` 遇到字符串键抛异常 → 外层 catch 吞掉 → 整份计划变空。
       ((m['pattern'] as Map<dynamic, dynamic>?) ?? const {})
-          .forEach((k, v) => pattern[(k as num).toInt()] = v as String);
+          .forEach((k, v) {
+        final key = k is num ? k.toInt() : int.tryParse('$k');
+        if (key != null) pattern[key] = v as String;
+      });
       final overrides = <String, PlanOverride>{};
       ((m['userOverrides'] as Map<dynamic, dynamic>?) ?? const {})
           .forEach((k, v) {
