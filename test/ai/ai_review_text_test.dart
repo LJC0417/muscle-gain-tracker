@@ -22,11 +22,20 @@ void main() {
     });
 
     test('含黑名单的句子被整句丢弃，其余保留', () {
-      const raw = '这周体重涨了0.3kg，节奏正常。希望对您有帮助。下周把蛋白补到110g。';
+      // 注意：剔除黑名单句后剩余文本必须 >= aiMinChars(30)，否则会被
+      // 最短长度门槛清空。样本共 44 字（去 1 句黑名单后 44 字）。
+      const raw = '这周体重涨了0.3kg，节奏正常，训练也全勤。希望对您有帮助。'
+          '下周把蛋白补到110g，卧推加2.5kg。';
       final got = sanitizeAiText(raw);
       expect(got.contains('希望'), isFalse);
       expect(got.contains('110g'), isTrue);
       expect(aiBlacklistScan.hasMatch(got), isFalse);
+    });
+
+    test('剔除后不足 aiMinChars 的文本 → 返回空串（触发本地降级）', () {
+      // 真实案例：两句话的输出剔除黑名单句后仅 29 字，低于门槛必须降级
+      final got = sanitizeAiText('这周体重涨了0.3kg，节奏正常。希望对您有帮助。下周把蛋白补到110g。');
+      expect(got, '');
     });
 
     test('全篇命中黑名单/过短 → 返回空串（触发本地降级）', () {
