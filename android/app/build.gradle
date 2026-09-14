@@ -61,7 +61,9 @@ flutter {
 // 修复依赖重复类冲突：
 // 1) kotlin-stdlib 1.8+ 已并入 jdk7/jdk8 子库，老插件带入的旧子库会与之重复 → 统一锁 1.9.22
 //    （与 settings.gradle 的 Kotlin 插件 1.9.22 配套；health 13.x 编译目标即 1.9.22）
-// 2) workmanager 等插件带入的 Guava/ListenableFuture 重复
+// 2) workmanager 等插件带入的 Guava/ListenableFuture 重复 → 统一锁 32.1.1
+//    （guava 自带 ListenableFuture；曾单独引入的 listenablefuture 空桩与 health 的
+//     connect-client 真实依赖发生 capability 冲突，已移除）
 configurations.all {
     resolutionStrategy {
         force 'org.jetbrains.kotlin:kotlin-stdlib:1.9.22'
@@ -69,8 +71,4 @@ configurations.all {
         force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22'
         force 'com.google.guava:guava:32.1.1-android'
     }
-}
-
-dependencies {
-    implementation "com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava"
 }
