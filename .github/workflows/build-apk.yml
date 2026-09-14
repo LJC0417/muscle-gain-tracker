@@ -36,6 +36,11 @@ jobs:
           dart --version
           java -version
 
+      - name: Install Android SDK Platform 35
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-35" "build-tools;34.0.0" > /dev/null || true
+
       - name: Install Flutter dependencies
         run: flutter pub get
 
