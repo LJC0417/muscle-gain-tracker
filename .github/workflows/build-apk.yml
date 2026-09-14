@@ -63,14 +63,11 @@ jobs:
           tail -n 40 /tmp/apk_build.log || true
           echo "===== what went wrong ====="
           awk '/What went wrong/{f=1;next} f&&n<25{print;n++}' /tmp/apk_build.log || true
-          {
-            grep -E "Duplicate class" /tmp/apk_build.log | head -n 6 | cut -c1-380
-            grep -E "error:|resource .* not found|Execution failed for task|Caused by:|FAILURE:|What went wrong|OutOfMemory|Exception" /tmp/apk_build.log | tail -n 10 | cut -c1-380
-          } | awk '!seen[$0]++' > /tmp/errs.txt || true
-          cat /tmp/errs.txt
-          # Fallback: if no pattern matched, emit raw tail lines so they surface as annotations
+          # Primary: the "What went wrong" section verbatim (contains the real cause)
+          awk '/What went wrong/{f=1;next} f&&n<16{print;n++}' /tmp/apk_build.log | cut -c1-380 > /tmp/errs.txt || true
+          # Fallback: raw tail lines
           if [ ! -s /tmp/errs.txt ]; then
-            tail -n 12 /tmp/apk_build.log | cut -c1-300 > /tmp/errs.txt
+            tail -n 14 /tmp/apk_build.log | cut -c1-300 > /tmp/errs.txt
           fi
           while IFS= read -r line; do echo "::error::$line"; done < /tmp/errs.txt
 
