@@ -71,4 +71,15 @@ configurations.all {
         force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22'
         force 'com.google.guava:guava:32.1.1-android'
     }
+    // capability 仲裁：listenablefuture 有三个提供者（guava 本体 / listenablefuture:1.0
+    // 真模块 / 曾用空桩），Gradle 无法自动二选一 → 统一选 guava 本体（Gradle 官方示例方案）
+    resolutionStrategy.capabilitiesResolution {
+        withCapability('com.google.guava:listenablefuture') {
+            def toBeSelected = candidates.find {
+                it.id instanceof ModuleComponentIdentifier && it.id.module == 'guava'
+            }
+            if (toBeSelected != null) { select(toBeSelected) }
+            because 'guava 本体已包含 ListenableFuture，排除空桩与独立子模块'
+        }
+    }
 }
