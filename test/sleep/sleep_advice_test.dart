@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:muscle_gain_tracker/application/sleep_models.dart';
 
+/// 构造自洽的一晚：分段总长 = awakeMin + asleepMin，wake = bedtime + 总长。
 SleepDay _day({
   required int asleepMin,
   int deepMin = 100,
@@ -13,20 +14,23 @@ SleepDay _day({
   double? spo2Min = 96,
 }) {
   final lightMin = asleepMin - deepMin - remMin;
+  final span = awakeMin + asleepMin;
+  final t0 = 23 * 60;
+  final t1 = t0 + awakeMin;
+  final t2 = t1 + deepMin;
+  final t3 = t2 + lightMin;
   final segments = <SleepSegment>[
-    SleepSegment(SleepStage.awake, 23 * 60, 23 * 60 + awakeMin),
-    SleepSegment(SleepStage.deep, 23 * 60 + awakeMin, 23 * 60 + awakeMin + deepMin),
-    SleepSegment(
-        SleepStage.light, 23 * 60 + awakeMin + deepMin, 23 * 60 + awakeMin + deepMin + lightMin),
-    SleepSegment(
-        SleepStage.rem, 23 * 60 + awakeMin + deepMin + lightMin, 23 * 60 + awakeMin + deepMin + lightMin + remMin),
+    SleepSegment(SleepStage.awake, t0, t1),
+    SleepSegment(SleepStage.deep, t1, t2),
+    SleepSegment(SleepStage.light, t2, t3),
+    SleepSegment(SleepStage.rem, t3, t3 + remMin),
   ];
   return SleepDay(
     date: date,
-    windowStartMin: 23 * 60,
-    windowEndMin: 7 * 60 + 1440,
-    bedtimeMin: 23 * 60,
-    wakeMin: 7 * 60 + 1440,
+    windowStartMin: t0,
+    windowEndMin: t0 + span,
+    bedtimeMin: t0,
+    wakeMin: t0 + span,
     segments: segments,
     avgHr: avgHr,
     hrvMs: hrvMs,
@@ -36,8 +40,8 @@ SleepDay _day({
 
 void main() {
   test('睡得好的夜晚只给正向反馈', () {
-    // 睡 7.5h，清醒 15 分钟，深睡/REM 正常，体征正常
-    final day = _day(asleepMin: 7 * 60 + 30);
+    // 睡 7.5h，清醒 15 分钟；深睡 80/465≈17%（不触发好坏阈值）；体征正常
+    final day = _day(asleepMin: 7 * 60 + 30, deepMin: 80);
     final advice = buildSleepAdvice(day);
     expect(advice.length, 1);
     expect(advice.first.positive, isTrue);
@@ -46,8 +50,8 @@ void main() {
   test('总时长不足时给出补觉建议', () {
     final day = _day(asleepMin: 6 * 60, deepMin: 60, remMin: 60);
     final advice = buildSleepAdvice(day);
-    expect(advice.any((a) => a.title.contains('总睡眠') || a.title.contains('睡眠')), isTrue);
     expect(advice.first.positive, isFalse);
+    expect(advice.any((a) => a.title.contains('总睡眠')), isTrue);
   });
 
   test('体征异常触发对应建议', () {
@@ -58,19 +62,20 @@ void main() {
   });
 
   test('入睡过晚触发就寝建议', () {
-    final base = _day(asleepMin: 7 * 60 + 40);
-    // 手动构造 00:45 才入睡的一晚
+    // 00:45 入睡，睡 7h15m（deep 100 / light 245 / rem 90）
+    final t0 = 24 * 60 + 45;
+    final segments = <SleepSegment>[
+      SleepSegment(SleepStage.deep, t0, t0 + 100),
+      SleepSegment(SleepStage.light, t0 + 100, t0 + 345),
+      SleepSegment(SleepStage.rem, t0 + 345, t0 + 435),
+    ];
     final day = SleepDay(
-      date: base.date,
-      windowStartMin: 24 * 60 + 45,
-      windowEndMin: 8 * 60 + 1440,
-      bedtimeMin: 24 * 60 + 45,
-      wakeMin: 8 * 60 + 1440,
-      segments: [
-        SleepSegment(SleepStage.deep, 24 * 60 + 45, 25 * 60 + 105),
-        SleepSegment(SleepStage.light, 25 * 60 + 105, 30 * 60 + 105),
-        SleepSegment(SleepStage.rem, 30 * 60 + 105, 31 * 60 + 15),
-      ],
+      date: '2026-09-14',
+      windowStartMin: t0,
+      windowEndMin: t0 + 435,
+      bedtimeMin: t0,
+      wakeMin: t0 + 435,
+      segments: segments,
       avgHr: 55,
       hrvMs: 45,
       spo2Min: 96,
