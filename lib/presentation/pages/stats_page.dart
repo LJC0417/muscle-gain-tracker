@@ -3,7 +3,7 @@
 ///   - 体重趋势图（真实点 + 7 日均线），周/月/季/全部 切换
 ///   - 本周概览 KPI（体重/周均变化/节奏/连续记录/训练/容量）
 ///   - 热量微调建议（3 闸门 + 软边界，应用写 kcalAutoOffset，每周 1 次）
-///   - AI 周报：本地模板生成 + 落库 WeeklyReviews
+///   - AI 周报：云端大模型生成（走云服务免密钥通道），24h 缓存 + 失败降级本地模板
 library;
 
 import 'package:drift/drift.dart' show Value;
@@ -11,10 +11,10 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../application/ai/weekly_review_ai.dart';
 import '../../application/history_providers.dart';
 import '../../application/providers/app_providers.dart';
 import '../../application/providers/database_provider.dart';
-import '../../application/weekly_review.dart';
 import '../../core/constants/app_config.dart';
 import '../../data/database.dart';
 import '../../domain/calc/calc.dart';
@@ -31,7 +31,17 @@ class StatsPage extends ConsumerStatefulWidget {
 
 class _StatsPageState extends ConsumerState<StatsPage> {
   String _range = 'month';
-  String? _aiText;
+  AiReviewOutcome? _ai;
+  bool _aiLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 打开页面即自动生成（命中 24h 缓存则直接读缓存，不重复调用）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _runReview(force: false);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +51,8 @@ class _StatsPageState extends ConsumerState<StatsPage> {
     final today = ref.watch(todayStringProvider);
     final sessionsAsync = ref.watch(allSessionsProvider);
     final foodLogsAsync = ref.watch(todayFoodLogsProvider);
+    final exercisesAsync = ref.watch(exercisesProvider);
+    final profile = ref.watch(profileStreamProvider).valueOrNull;
 
     final weights = weightsAsync.value ?? const <WeightPointData>[];
     final sorted = [...weights]..sort((a, b) => a.date.compareTo(b.date));
@@ -177,34 +189,14 @@ class _StatsPageState extends ConsumerState<StatsPage> {
           const SizedBox(height: 12),
           MgCard(
             title: '每周总结',
-            right: _aiText != null
-                ? TextButton(
-                    onPressed: () => setState(() => _aiText = null),
-                    child: const Text('重算'),
-                  )
-                : null,
-            child: _aiText != null
-                ? _aiCard(_aiText!)
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('生成一段专业口吻的本周复盘与下周建议。',
-                          style: TextStyle(
-                              fontSize: 13, color: AppPalette.textSub)),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: () => _genReview(
-                          today: today,
-                          goal: goal,
-                          goalRow: goalRow,
-                          weights: weights,
-                          foodLogs: foodLogsAsync.valueOrNull ?? const [],
-                          sessions: sessionsAsync.valueOrNull ?? const [],
-                        ),
-                        child: const Text('生成本周总结'),
-                      ),
-                    ],
-                  ),
+            sub: 'AI 教练结合你这周的实际数据写，不是模板套话',
+            right: TextButton(
+              onPressed: _aiLoading
+                  ? null
+                  : () => _runReview(force: true),
+              child: Text(_aiLoading ? '生成中…' : '重新生成'),
+            ),
+            child: _reviewBody(),
           ),
           const SizedBox(height: 24),
         ],
@@ -383,27 +375,206 @@ class _StatsPageState extends ConsumerState<StatsPage> {
   }
 
   // ── AI 周报 ──
-  Future<void> _genReview({
-    required String today,
-    required ResolvedGoalView goal,
-    required GoalData? goalRow,
-    required List<WeightPointData> weights,
-    required List<FoodLogData> foodLogs,
-    required List<TrainingSession> sessions,
-  }) async {
-    final r = buildWeeklyReview(
-      today: today,
-      weights: weights,
-      foodLogs: foodLogs,
-      sessions: sessions,
-      goal: goal,
-      currentWeightKg: goalRow?.currentWeightKg,
-    );
+  /// 生成/读取周报。force=true 为「重新生成」（跳过缓存，仍受当日额度限制）。
+  Future<void> _runReview({required bool force}) async {
+    if (_aiLoading) return;
+    final weights =
+        ref.read(weightPointsStreamProvider).value ?? const <WeightPointData>[];
+    final sessions =
+        ref.read(allSessionsProvider).valueOrNull ?? const <TrainingSession>[];
+    final exercises =
+        ref.read(exercisesProvider).valueOrNull ?? const <ExerciseData>[];
+    final foodLogs =
+        ref.read(todayFoodLogsProvider).valueOrNull ?? const <FoodLogData>[];
+    final goalRow = ref.read(goalStreamProvider).valueOrNull;
+    final profile = ref.read(profileStreamProvider).valueOrNull;
+    final today = ref.read(todayStringProvider);
     final db = ref.read(databaseReadyProvider).requireValue;
-    await saveWeeklyReview(db, r);
-    if (!mounted) return;
-    setState(() => _aiText = r.text);
+
+    setState(() {
+      _aiLoading = true;
+    });
+    try {
+      final outcome = await generateAiWeeklyReview(
+        db: db,
+        today: today,
+        goal: ref.read(resolvedGoalProvider),
+        weights: weights,
+        foodLogs: foodLogs,
+        sessions: sessions,
+        exercises: exercises,
+        profile: profile,
+        goalRow: goalRow,
+        currentWeightKg: goalRow?.currentWeightKg,
+        force: force,
+      );
+      if (!mounted) return;
+      setState(() {
+        _ai = outcome;
+        _aiLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _aiLoading = false);
+    }
   }
+
+  Widget _reviewBody() {
+    if (_aiLoading && _ai == null) return _aiSkeleton();
+    final ai = _ai;
+    if (ai == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('正等你写点数据进来，有记录后我会按周给你复盘。',
+              style: TextStyle(fontSize: 13, color: AppPalette.textSub)),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: () => _runReview(force: false),
+            child: const Text('生成本周总结'),
+          ),
+        ],
+      );
+    }
+    // 数据侧 KPI（无论 AI 还是降级都用本地算法口径）
+    final kpi = ai.local;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_aiLoading) ...[
+          // 重新生成中：旧内容保留，顶部给加载提示
+          Row(
+            children: const [
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppPalette.primary),
+              ),
+              SizedBox(width: 8),
+              Text('AI 教练正在重写…',
+                  style: TextStyle(fontSize: 12, color: AppPalette.textSub)),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppPalette.primaryWeak,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            ai.text,
+            style: const TextStyle(
+              fontSize: 14,
+              height: 1.7,
+              color: AppPalette.text,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            if (ai.fromAi)
+              const MgBadge(
+                text: 'AI 教练',
+                bg: AppPalette.surfaceMuted,
+                fg: AppPalette.textSub,
+              )
+            else
+              Expanded(
+                child: Text(
+                  '⚠ ${ai.note ?? '网络不可用，显示本地建议'}',
+                  style: const TextStyle(
+                      fontSize: 11, color: AppPalette.textWeak),
+                ),
+              ),
+            if (ai.fromAi && ai.cached)
+              const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: Text('· 今日已生成，24 小时内不重复请求',
+                    style:
+                        TextStyle(fontSize: 11, color: AppPalette.textWeak)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const Divider(height: 1),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 16,
+          runSpacing: 8,
+          children: [
+            _kvMini('本周体重均', kpi.thisWeekAvg == null
+                ? '—'
+                : '${kpi.thisWeekAvg!.toStringAsFixed(2)} kg'),
+            _kvMini('周均变化', kpi.delta == null
+                ? '—'
+                : '${kpi.delta! >= 0 ? '+' : ''}${kpi.delta!.toStringAsFixed(2)} kg'),
+            _kvMini('日均热量', '${kpi.avgKcal} kcal'),
+            _kvMini('日均蛋白', '${kpi.avgP} g'),
+            _kvMini('完成训练', '${kpi.trainCount} 次'),
+            _kvMini('训练容量', '${kpi.volume.toStringAsFixed(0)} kg'),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _aiSkeleton() {
+    Widget bar(double w) => Container(
+          width: w,
+          height: 12,
+          decoration: BoxDecoration(
+            color: AppPalette.surfaceMuted,
+            borderRadius: BorderRadius.circular(6),
+          ),
+        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: const [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: AppPalette.primary),
+            ),
+            SizedBox(width: 8),
+            Text('AI 教练正在写你的周评…',
+                style: TextStyle(fontSize: 12, color: AppPalette.textSub)),
+          ],
+        ),
+        const SizedBox(height: 14),
+        bar(double.infinity),
+        const SizedBox(height: 8),
+        bar(240),
+        const SizedBox(height: 8),
+        bar(180),
+      ],
+    );
+  }
+}
+
+Widget _kvMini(String label, String value) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label,
+          style: const TextStyle(fontSize: 11, color: AppPalette.textWeak)),
+      const SizedBox(height: 2),
+      Text(value,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            fontFeatures: [FontFeature.tabularFigures()],
+          )),
+    ],
+  );
 }
 
 Widget _kpi(String v, String l) {
@@ -428,35 +599,5 @@ Widget _kpi(String v, String l) {
         ),
       ),
     ],
-  );
-}
-
-Widget _aiCard(String text) {
-  return Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: AppPalette.primaryWeak,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Row(
-          children: [
-            Icon(Icons.auto_awesome, size: 14, color: AppPalette.primaryDark),
-            SizedBox(width: 4),
-            Text('AI 周报 · 本地生成',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppPalette.primaryDark)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(text,
-            style: const TextStyle(fontSize: 14, height: 1.6)),
-      ],
-    ),
   );
 }
