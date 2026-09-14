@@ -25,7 +25,9 @@ if (flutterVersionName == null) {
 
 android {
     namespace = "com.ljc.muscle_gain_tracker"
-    compileSdk = flutter.compileSdkVersion
+    // 35：health 的 connect-client 1.1.0-alpha11 要求 compileSdk ≥35
+    // （AGP 7.3 的「最高推荐 33」仅是警告，已在 gradle.properties 抑制）
+    compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
